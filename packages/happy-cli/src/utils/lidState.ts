@@ -53,8 +53,20 @@ export function hasExternalDisplay(): boolean {
     }
 }
 
+/**
+ * Set HAPPY_IGNORE_LID=1 to skip the wake and lid checks. Use this on a Mac that
+ * stays awake with the lid closed (for example with caffeinate or
+ * SleepDisabled) and that has no external display. Without this, the
+ * daemon does not reconnect after a drop and the app shows it offline.
+ */
+export function ignoreLidState(env: NodeJS.ProcessEnv = process.env): boolean {
+    const value = (env.HAPPY_IGNORE_LID || '').trim().toLowerCase()
+    return value === '1' || value === 'true' || value === 'yes'
+}
+
 export function shouldReconnect(): boolean {
     if (!hasNetworkConnectivity()) return false
+    if (ignoreLidState()) return true
 
     const capability = getMacCapabilityState()
     if (capability.status === 'ready') {

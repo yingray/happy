@@ -29,12 +29,23 @@ const connectedInterfaces = {
 describe('shouldReconnect', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+        vi.stubEnv('HAPPY_IGNORE_LID', '')
         Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'darwin' })
         mockGetMacCapabilityState.mockReturnValue({ status: 'unavailable', fullWake: null })
     })
 
     afterEach(() => {
+        vi.unstubAllEnvs()
         Object.defineProperty(process, 'platform', originalPlatform)
+    })
+
+    it('allows reconnect during dark wake when HAPPY_IGNORE_LID is set', () => {
+        vi.stubEnv('HAPPY_IGNORE_LID', '1')
+        mockNetworkInterfaces.mockReturnValue(connectedInterfaces)
+        mockGetMacCapabilityState.mockReturnValue({ status: 'ready', fullWake: false })
+
+        expect(shouldReconnect()).toBe(true)
+        expect(mockExecSync).not.toHaveBeenCalled()
     })
 
     it('stays false without a network interface and does not inspect power state', () => {
