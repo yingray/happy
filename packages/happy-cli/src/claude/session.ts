@@ -4,6 +4,8 @@ import { EnhancedMode } from "./loop";
 import { logger } from "@/ui/logger";
 import type { JsRuntime } from "./runClaude";
 import type { SandboxConfig } from "@/persistence";
+import { getProjectPath } from "./utils/path";
+import { createBackgroundWorkTracker, type BackgroundWorkTracker } from "./utils/backgroundAgentActivity";
 
 export class Session {
     readonly path: string;
@@ -25,7 +27,17 @@ export class Session {
 
     sessionId: string | null;
     mode: 'local' | 'remote' = 'local';
+    /** Effective thinking state: the fetch tracker OR live background agents. */
     thinking: boolean = false;
+
+    /** Thinking reported by the launcher's fetch tracker (main line only). */
+    private fetchThinking: boolean = false;
+    /** Whether the session has background agents that have not reported back. */
+    private backgroundAgentsActive: boolean = false;
+    /** Tracks background agents from the transcript records. Created on demand. */
+    private backgroundWorkTracker: BackgroundWorkTracker | null = null;
+    /** Guard so a slow probe never overlaps the next keep alive tick. */
+    private backgroundProbeRunning: boolean = false;
     
     /** Callbacks to be notified when session ID is found/changed */
     private sessionFoundCallbacks: ((sessionId: string) => void)[] = [];
@@ -71,6 +83,7 @@ export class Session {
         // Start keep alive
         this.client.keepAlive(this.thinking, this.mode);
         this.keepAliveInterval = setInterval(() => {
+            void this.probeBackgroundAgents();
             this.client.keepAlive(this.thinking, this.mode);
         }, 2000);
     }
@@ -85,6 +98,46 @@ export class Session {
     }
 
     onThinkingChange = (thinking: boolean) => {
+        this.fetchThinking = thinking;
+        this.applyThinking();
+    }
+
+    /**
+     * A background subagent or workflow outlives the turn that started it, so
+     * the turn-based thinking state goes false while the agents still work.
+     * Hold the thinking state on until every background agent reports back,
+     * which keeps the app's activity indicator honest.
+     */
+    private probeBackgroundAgents = async (): Promise<void> => {
+        if (this.backgroundProbeRunning) {
+            return;
+        }
+        const sessionId = this.sessionId;
+        if (!sessionId) {
+            return;
+        }
+        this.backgroundProbeRunning = true;
+        try {
+            if (!this.backgroundWorkTracker) {
+                this.backgroundWorkTracker = createBackgroundWorkTracker({
+                    projectDir: getProjectPath(this.path),
+                });
+            }
+            const active = await this.backgroundWorkTracker.hasLiveBackgroundWork(sessionId);
+            if (active !== this.backgroundAgentsActive) {
+                this.backgroundAgentsActive = active;
+                logger.debug(`[Session] Background agent activity changed to: ${active}`);
+                this.applyThinking();
+            }
+        } catch (error) {
+            logger.debug('[Session] Background agent probe failed', error);
+        } finally {
+            this.backgroundProbeRunning = false;
+        }
+    }
+
+    private applyThinking = (): void => {
+        const thinking = this.fetchThinking || this.backgroundAgentsActive;
         this.thinking = thinking;
         this.client.keepAlive(thinking, this.mode);
     }
