@@ -42,6 +42,7 @@ import { downloadCodexFileEventAttachment } from './utils/attachmentEvents';
 import { prepareCodexImageInputItems } from './utils/imageInput';
 import { createSerialAsyncHandler } from './utils/serialAsyncHandler';
 import { buildCodexThreadBackfillEnvelopes } from './utils/threadImageBackfill';
+import { startTurnSteering, type TurnSteering } from './turnSteering';
 import {
     buildCodexTurnPrompt,
     hashCodexEnhancedMode,
@@ -888,11 +889,12 @@ export async function runCodex(opts: {
             }));
         }
 
-        let pending: { message: string; mode: EnhancedMode; isolate: boolean; hash: string; attachments?: PendingAttachment[] } | null = null;
+        type QueuedBatch = { message: string; mode: EnhancedMode; isolate: boolean; hash: string; attachments?: PendingAttachment[] };
+        let pending: QueuedBatch | null = null;
 
         while (!shouldExit) {
             logActiveHandles('loop-top');
-            let message: { message: string; mode: EnhancedMode; isolate: boolean; hash: string; attachments?: PendingAttachment[] } | null = pending;
+            let message: QueuedBatch | null = pending;
             pending = null;
             if (!message) {
                 // Capture the current signal to distinguish idle-abort from queue close
@@ -1011,13 +1013,49 @@ export async function runCodex(opts: {
                     includeTitleInstruction: first,
                 });
 
-                const result = await client.sendTurnAndWait(turnPrompt, {
-                    model: message.mode.model,
-                    approvalPolicy: executionPolicy.approvalPolicy,
-                    sandbox: executionPolicy.sandbox,
-                    effort: message.mode.effort,
-                    extraInputItems: imageInputs.inputItems,
+                // Messages that arrive during the turn go into it with
+                // turn/steer. A batch that cannot go in waits for the next turn.
+                const turnModeHash: string = message.hash;
+                const steering: TurnSteering<QueuedBatch> = startTurnSteering<QueuedBatch>({
+                    queue: messageQueue,
+                    canSteer: (batch) => !batch.isolate
+                        && batch.hash === turnModeHash
+                        && !abortInProgress
+                        && !isCodexClearText(batch.message)
+                        && !parseCodexGoalCommand(batch.message),
+                    steer: async (batch) => {
+                        const steerImages = await prepareCodexImageInputItems(batch.attachments, {
+                            sessionId: session.sessionId,
+                        });
+                        if (batch.message.trim().length === 0 && steerImages.inputItems.length === 0) {
+                            // Same rule as a new turn: nothing to send.
+                            return true;
+                        }
+                        const steered = await client.steerTurn(batch.message, {
+                            extraInputItems: steerImages.inputItems,
+                        });
+                        if (steered) {
+                            logger.debug('[Codex] Steered a queued message into the running turn');
+                            if (batch.message.trim().length > 0) {
+                                messageBuffer.addMessage(batch.message, 'user');
+                            }
+                        }
+                        return steered;
+                    },
+                    onError: (error) => logger.debug('[Codex] Steering failed; the message goes to the next turn', error),
                 });
+                let result: { aborted: boolean };
+                try {
+                    result = await client.sendTurnAndWait(turnPrompt, {
+                        model: message.mode.model,
+                        approvalPolicy: executionPolicy.approvalPolicy,
+                        sandbox: executionPolicy.sandbox,
+                        effort: message.mode.effort,
+                        extraInputItems: imageInputs.inputItems,
+                    });
+                } finally {
+                    pending = await steering.stop();
+                }
                 first = false;
                 if (includeAppendSystemPrompt) {
                     appendSystemPromptInjected = true;
