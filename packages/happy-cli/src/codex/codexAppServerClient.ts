@@ -652,14 +652,10 @@ export class CodexAppServerClient {
                 });
             }
 
-            if (item.phase === 'final_answer' && this.pendingTurnCompletion) {
-                this.emitRawTurnCompletion(
-                    this.extractTurnId(params),
-                    'completed',
-                    null,
-                    `${method}:final_answer`,
-                );
-            }
+            // A final_answer message does not end the turn. A question from
+            // request_user_input_async also has this phase, and the turn goes
+            // on after it. Input that arrives before turn/completed joins the
+            // same turn. Only turn/completed or an idle thread ends the turn.
             return true;
         }
 

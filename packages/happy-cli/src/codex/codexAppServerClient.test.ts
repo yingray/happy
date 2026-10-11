@@ -1553,6 +1553,13 @@ describe('CodexAppServerClient sandbox integration', () => {
                                 },
                             },
                         });
+                        pushJsonLine(stdout, {
+                            method: 'turn/completed',
+                            params: {
+                                threadId: 'thread-raw-3',
+                                turn: { id: 'turn-raw-3', items: [], status: 'completed', error: null },
+                            },
+                        });
                     }, 0);
                 }
             },
@@ -1839,7 +1846,7 @@ describe('CodexAppServerClient sandbox integration', () => {
         await client.disconnect();
     });
 
-    it('falls back to final answer completion when raw turn/completed is missing', async () => {
+    it('keeps the turn open after a final answer until raw turn/completed', async () => {
         const proc = createMockProcess({
             pid: 3002,
             onRequest: (msg, stdout) => {
@@ -1881,6 +1888,23 @@ describe('CodexAppServerClient sandbox integration', () => {
                                 threadId: 'thread-raw-2',
                                 turnId: 'turn-raw-2',
                                 item: {
+                                    // request_user_input_async asks its question
+                                    // as a final_answer message, and the turn goes on.
+                                    type: 'agentMessage',
+                                    id: 'call-question-1',
+                                    text: 'Which option do you want?',
+                                    phase: 'final_answer',
+                                },
+                            },
+                        });
+                    }, 0);
+                    setTimeout(() => {
+                        pushJsonLine(stdout, {
+                            method: 'item/completed',
+                            params: {
+                                threadId: 'thread-raw-2',
+                                turnId: 'turn-raw-2',
+                                item: {
                                     type: 'agentMessage',
                                     id: 'msg-2',
                                     text: 'still works',
@@ -1888,7 +1912,14 @@ describe('CodexAppServerClient sandbox integration', () => {
                                 },
                             },
                         });
-                    }, 0);
+                        pushJsonLine(stdout, {
+                            method: 'turn/completed',
+                            params: {
+                                threadId: 'thread-raw-2',
+                                turn: { id: 'turn-raw-2', items: [], status: 'completed', error: null },
+                            },
+                        });
+                    }, 30);
                 }
             },
         });
@@ -1911,11 +1942,13 @@ describe('CodexAppServerClient sandbox integration', () => {
         });
 
         await expect(client.sendTurnAndWait('say hi')).resolves.toEqual({ aborted: false });
-        expect(events).toEqual(expect.arrayContaining([
-            expect.objectContaining({ type: 'task_started', turn_id: 'turn-raw-2' }),
-            expect.objectContaining({ type: 'agent_message', message: 'still works' }),
-            expect.objectContaining({ type: 'task_complete', turn_id: 'turn-raw-2' }),
-        ]));
+        expect(events.map((event) => event.message ?? event.type)).toEqual([
+            'task_started',
+            'Which option do you want?',
+            'still works',
+            'task_complete',
+        ]);
+        expect(events.filter((event) => event.type === 'task_complete')).toHaveLength(1);
 
         await client.disconnect();
     });
