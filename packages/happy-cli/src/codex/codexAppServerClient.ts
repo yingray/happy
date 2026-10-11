@@ -214,6 +214,16 @@ function normalizeRawFileChangeList(changes: unknown): LegacyPatchChanges | unde
     return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
+/** The input items for a turn: the prompt text, then any images. */
+function buildTurnInput(prompt: string, extraInputItems: InputItem[] = []): InputItem[] {
+    const input: InputItem[] = [];
+    if (prompt.length > 0 || extraInputItems.length === 0) {
+        input.push({ type: 'text', text: prompt });
+    }
+    input.push(...extraInputItems);
+    return input;
+}
+
 export class CodexAppServerClient {
     private process: ChildProcess | null = null;
     private readline: ReadlineInterface | null = null;
@@ -264,6 +274,8 @@ export class CodexAppServerClient {
     // Handlers set by the consumer (runCodex.ts)
     private eventHandler: ((msg: EventMsg) => void) | null = null;
     private approvalHandler: ApprovalHandler | null = null;
+    // Set when the codex app-server does not know turn/steer (method not found).
+    private steerUnsupported = false;
 
     constructor(sandboxConfig?: SandboxConfig) {
         this.sandboxConfig = sandboxConfig;
@@ -1169,17 +1181,10 @@ export class CodexAppServerClient {
             throw new Error('No active thread. Call startThread first.');
         }
 
-        const extraInputItems = opts?.extraInputItems ?? [];
-        const input: InputItem[] = [];
-        if (prompt.length > 0 || extraInputItems.length === 0) {
-            input.push({ type: 'text', text: prompt });
-        }
-        input.push(...extraInputItems);
-
         // Build params — only include optional fields when set (server uses thread defaults otherwise)
         const params: Record<string, unknown> = {
             threadId: this._threadId,
-            input,
+            input: buildTurnInput(prompt, opts?.extraInputItems),
         };
         if (opts?.cwd) params.cwd = opts.cwd;
         if (opts?.approvalPolicy) params.approvalPolicy = opts.approvalPolicy;
@@ -1211,6 +1216,39 @@ export class CodexAppServerClient {
             if (this.pendingTurnCompletion) {
                 this.pendingTurnCompletion.turnId = turnId;
             }
+        }
+    }
+
+    /**
+     * Add user input to the turn that is running now (turn/steer).
+     * Returns false when there is no active turn, the turn ended before codex
+     * got the input, or this codex has no turn/steer. The caller then sends
+     * the input as a new turn.
+     */
+    async steerTurn(prompt: string, opts?: { extraInputItems?: InputItem[] }): Promise<boolean> {
+        const threadId = this._threadId;
+        const expectedTurnId = this._turnId;
+        if (this.steerUnsupported || !threadId || !expectedTurnId || !this.pendingTurnCompletion) {
+            return false;
+        }
+        try {
+            const result = await this.request('turn/steer', {
+                threadId,
+                input: buildTurnInput(prompt, opts?.extraInputItems),
+                expectedTurnId,
+            }) as { turnId?: string | null } | null;
+            const turnId = result?.turnId;
+            if (typeof turnId === 'string' && turnId.length > 0 && this.pendingTurnCompletion) {
+                this._turnId = turnId;
+                this.pendingTurnCompletion.turnId = turnId;
+            }
+            return true;
+        } catch (err) {
+            if (err instanceof Error && err.message.includes('(code=-32601)')) {
+                this.steerUnsupported = true;
+            }
+            logger.debug('[CodexAppServer] turn/steer rejected; the input goes to the next turn:', err);
+            return false;
         }
     }
 

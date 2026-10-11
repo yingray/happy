@@ -1953,6 +1953,92 @@ describe('CodexAppServerClient sandbox integration', () => {
         await client.disconnect();
     });
 
+    it('steers input into the running turn and refuses once the turn has ended', async () => {
+        const requests: MockRpcMessage[] = [];
+        let stdoutRef: (NodeJS.ReadableStream & { push: (chunk: string) => void }) | null = null;
+        const proc = createMockProcess({
+            pid: 3004,
+            onRequest: (msg, stdout) => {
+                stdoutRef = stdout;
+                requests.push(msg);
+                if (msg.method === 'thread/start' && msg.id != null) {
+                    setTimeout(() => {
+                        pushJsonLine(stdout, {
+                            id: msg.id,
+                            result: {
+                                thread: { id: 'thread-steer', path: '/tmp/thread-steer' },
+                                model: 'gpt-test',
+                                modelProvider: 'openai',
+                                cwd: '/tmp/project',
+                                approvalPolicy: 'never',
+                                sandbox: { type: 'dangerFullAccess' },
+                                reasoningEffort: null,
+                            },
+                        });
+                    }, 0);
+                }
+                if (msg.method === 'turn/start' && msg.id != null) {
+                    setTimeout(() => {
+                        pushJsonLine(stdout, {
+                            id: msg.id,
+                            result: { turn: { id: 'turn-steer', items: [], status: 'inProgress', error: null } },
+                        });
+                        pushJsonLine(stdout, {
+                            method: 'turn/started',
+                            params: {
+                                threadId: 'thread-steer',
+                                turn: { id: 'turn-steer', items: [], status: 'inProgress', error: null },
+                            },
+                        });
+                    }, 0);
+                }
+                if (msg.method === 'turn/steer' && msg.id != null) {
+                    setTimeout(() => {
+                        pushJsonLine(stdout, { id: msg.id, result: { turnId: 'turn-steer' } });
+                    }, 0);
+                }
+            },
+        });
+
+        mockSpawn.mockImplementation(() => proc);
+
+        const { CodexAppServerClient } = await import('./codexAppServerClient');
+        const client = new CodexAppServerClient();
+        client.setEventHandler(() => {});
+
+        await client.connect();
+        await client.startThread({
+            model: 'gpt-test',
+            cwd: '/tmp/project',
+            approvalPolicy: 'never',
+            sandbox: 'danger-full-access',
+        });
+
+        const turn = client.sendTurnAndWait('look around');
+        await vi.waitFor(() => expect(client.turnId).toBe('turn-steer'));
+
+        await expect(client.steerTurn('the second option')).resolves.toBe(true);
+        expect(requests.find((msg) => msg.method === 'turn/steer')?.params).toEqual({
+            threadId: 'thread-steer',
+            input: [{ type: 'text', text: 'the second option' }],
+            expectedTurnId: 'turn-steer',
+        });
+
+        pushJsonLine(stdoutRef!, {
+            method: 'turn/completed',
+            params: {
+                threadId: 'thread-steer',
+                turn: { id: 'turn-steer', items: [], status: 'completed', error: null },
+            },
+        });
+        await expect(turn).resolves.toEqual({ aborted: false });
+
+        await expect(client.steerTurn('too late')).resolves.toBe(false);
+        expect(requests.filter((msg) => msg.method === 'turn/steer')).toHaveLength(1);
+
+        await client.disconnect();
+    });
+
     it('responds to MCP elicitation requests with an action payload', async () => {
         const approvals: Array<Record<string, unknown>> = [];
         const requests: MockRpcMessage[] = [];
