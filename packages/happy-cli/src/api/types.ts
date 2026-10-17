@@ -312,6 +312,12 @@ export type Metadata = {
     text: string,
     updatedAt: number
   },
+  /**
+   * When the session last showed visible user text, visible agent text or a
+   * question to the user. The app shows it on the session row and sorts the
+   * list by it. ApiSessionClient writes it.
+   */
+  lastMeaningfulMessageAt?: number,
   machineId?: string,
   gitBranch?: string,
   claudeSessionId?: string, // Claude Code session ID

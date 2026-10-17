@@ -821,6 +821,88 @@ describe('ApiSessionClient v3 messages API migration', () => {
         });
     });
 
+    describe('lastMeaningfulMessageAt', () => {
+        const metadataWrites = () => mockSocket.emitWithAck.mock.calls
+            .filter(([event]: [string]) => event === 'update-metadata')
+            .map(([, payload]: [string, any]) => decrypt(session.encryptionKey, session.encryptionVariant, decodeBase64(payload.metadata)));
+
+        const acceptMetadataWrites = () => {
+            let version = 0;
+            mockSocket.emitWithAck.mockImplementation(async (event: string, payload: any) => {
+                if (event !== 'update-metadata') return { result: 'error' };
+                version += 1;
+                return { result: 'success', version, metadata: payload.metadata };
+            });
+        };
+
+        it('writes the time of visible agent text into metadata', async () => {
+            acceptMetadataWrites();
+            mockAxiosPost.mockResolvedValue({ data: { messages: [] } });
+            const client = new ApiSessionClient('fake-token', session);
+
+            client.sendSessionProtocolMessage({ id: 'e1', time: 5000, role: 'agent', ev: { t: 'text', text: 'done' } });
+
+            await waitForCheck(() => {
+                expect(metadataWrites()).toHaveLength(1);
+            });
+            expect(metadataWrites()[0]).toMatchObject({ path: '/tmp', lastMeaningfulMessageAt: 5000 });
+        });
+
+        it('does not write for tool calls or thinking', async () => {
+            acceptMetadataWrites();
+            mockAxiosPost.mockResolvedValue({ data: { messages: [] } });
+            const client = new ApiSessionClient('fake-token', session);
+
+            client.sendSessionProtocolMessage({ id: 'e1', time: 5000, role: 'agent', ev: { t: 'text', text: 'hmm', thinking: true } });
+            client.sendSessionProtocolMessage({
+                id: 'e2', time: 5001, role: 'agent',
+                ev: { t: 'tool-call-start', call: 'c', name: 'Bash', title: '', description: '', args: {} },
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            expect(metadataWrites()).toHaveLength(0);
+        });
+
+        it('writes at most once per interval and keeps the newest time', async () => {
+            vi.useFakeTimers();
+            acceptMetadataWrites();
+            mockAxiosPost.mockResolvedValue({ data: { messages: [] } });
+            const client = new ApiSessionClient('fake-token', session);
+
+            client.sendSessionProtocolMessage({ id: 'e1', time: 1000, role: 'agent', ev: { t: 'text', text: 'a' } });
+            await vi.advanceTimersByTimeAsync(0);
+            client.sendSessionProtocolMessage({ id: 'e2', time: 2000, role: 'agent', ev: { t: 'text', text: 'b' } });
+            client.sendSessionProtocolMessage({ id: 'e3', time: 3000, role: 'user', ev: { t: 'text', text: 'c' } });
+            await vi.advanceTimersByTimeAsync(1000);
+            expect(metadataWrites().map((m: any) => m.lastMeaningfulMessageAt)).toEqual([1000]);
+
+            await vi.advanceTimersByTimeAsync(15_000);
+            expect(metadataWrites().map((m: any) => m.lastMeaningfulMessageAt)).toEqual([1000, 3000]);
+        });
+
+        it('uses the server time of a user message from the app', async () => {
+            acceptMetadataWrites();
+            const client = new ApiSessionClient('fake-token', session);
+            client.onUserMessage(vi.fn());
+            mockAxiosGet.mockResolvedValueOnce({
+                data: {
+                    messages: [{
+                        id: 'msg-1', seq: 1, localId: null, createdAt: 7000, updatedAt: 7000,
+                        content: { t: 'encrypted', c: encryptContent(session, { role: 'user', content: { type: 'text', text: 'go' } }) },
+                    }],
+                    hasMore: false,
+                },
+            });
+
+            await (client as any).fetchMessages();
+
+            await waitForCheck(() => {
+                expect(metadataWrites()).toHaveLength(1);
+            });
+            expect(metadataWrites()[0].lastMeaningfulMessageAt).toBe(7000);
+        });
+    });
+
     it('fetchMessages uses after_seq=0 initially and routes user messages to callback', async () => {
         const client = new ApiSessionClient('fake-token', session);
         const onUserMessage = vi.fn();

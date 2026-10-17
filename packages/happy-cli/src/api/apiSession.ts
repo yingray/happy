@@ -24,6 +24,7 @@ import {
     type ClaudeSessionProtocolState,
 } from '@/claude/utils/sessionProtocolMapper';
 import { InvalidateSync } from '@/utils/sync';
+import { isMeaningfulAcpMessage, isMeaningfulEnvelope, nextMeaningfulMessageAt } from './meaningfulActivity';
 import axios from 'axios';
 
 /**
@@ -246,6 +247,9 @@ export class ApiSessionClient extends EventEmitter {
     private readonly sendSync: InvalidateSync;
     private readonly receiveSync: InvalidateSync;
     private reconnectCapabilityHeld = false;
+    private pendingMeaningfulAt: number | null = null;
+    private meaningfulWriteTimer: NodeJS.Timeout | null = null;
+    private lastMeaningfulWriteAt = 0;
 
     constructor(token: string, session: Session) {
         super()
@@ -346,7 +350,7 @@ export class ApiSessionClient extends EventEmitter {
                             ? (body as { content: { type: string } }).content.type
                             : 'unknown',
                     });
-                    this.routeIncomingMessage(body);
+                    this.routeIncomingMessage(body, data.body.message.createdAt);
                     this.lastReceivedSeq = messageSeq;
                 } else if (data.body.t === 'update-session') {
                     if (data.body.metadata && data.body.metadata.version > this.metadataVersion) {
@@ -571,9 +575,14 @@ export class ApiSessionClient extends EventEmitter {
         };
     }
 
-    private routeIncomingMessage(message: unknown) {
+    private routeIncomingMessage(message: unknown, createdAt: number) {
         const userResult = UserMessageSchema.safeParse(message);
         if (userResult.success) {
+            // A message that the app sent. It counts when it was written, so
+            // a resume that reads old messages again does not move the time.
+            if (userResult.data.content.text.trim().length > 0) {
+                this.noteMeaningfulActivity(createdAt);
+            }
             if (this.pendingMessageCallback) {
                 this.pendingMessageCallback(userResult.data);
             } else {
@@ -639,7 +648,7 @@ export class ApiSessionClient extends EventEmitter {
 
                 try {
                     const body = decrypt(this.encryptionKey, this.encryptionVariant, decodeBase64(message.content.c));
-                    this.routeIncomingMessage(body);
+                    this.routeIncomingMessage(body, message.createdAt);
                 } catch (error) {
                     logger.debug('[API] Failed to decrypt fetched message', {
                         sessionId: this.sessionId,
@@ -803,6 +812,9 @@ export class ApiSessionClient extends EventEmitter {
     }
 
     private enqueueSessionProtocolEnvelope(envelope: SessionEnvelope, invalidate: boolean = true) {
+        if (isMeaningfulEnvelope(envelope)) {
+            this.noteMeaningfulActivity(envelope.time);
+        }
         const content = {
             role: 'session',
             content: envelope,
@@ -849,6 +861,10 @@ export class ApiSessionClient extends EventEmitter {
         };
 
         logger.debug(`[SOCKET] Sending ACP message from ${provider}:`, { type: body.type, hasMessage: 'message' in body });
+
+        if (isMeaningfulAcpMessage(body)) {
+            this.noteMeaningfulActivity(Date.now());
+        }
 
         this.enqueueMessage(content);
     }
@@ -944,6 +960,42 @@ export class ApiSessionClient extends EventEmitter {
         this.skipInitialMessages = true;
     }
 
+    private static readonly MEANINGFUL_WRITE_INTERVAL_MS = 15_000;
+
+    /**
+     * Publishes `metadata.lastMeaningfulMessageAt`, so that every device shows
+     * the same time on the session row. A turn can send many messages in a few
+     * seconds, so the write happens at most once in each interval. The first
+     * message goes out at once and the last one goes out when the interval
+     * ends.
+     */
+    private noteMeaningfulActivity(at: number) {
+        if (this.closed || !Number.isFinite(at)) {
+            return;
+        }
+        this.pendingMeaningfulAt = nextMeaningfulMessageAt(this.pendingMeaningfulAt ?? undefined, at);
+        if (this.meaningfulWriteTimer) {
+            return;
+        }
+        const wait = Math.max(0, this.lastMeaningfulWriteAt + ApiSessionClient.MEANINGFUL_WRITE_INTERVAL_MS - Date.now());
+        this.meaningfulWriteTimer = setTimeout(() => this.writeMeaningfulActivity(), wait);
+        this.meaningfulWriteTimer.unref?.();
+    }
+
+    private writeMeaningfulActivity() {
+        this.meaningfulWriteTimer = null;
+        const at = this.pendingMeaningfulAt;
+        this.pendingMeaningfulAt = null;
+        if (at === null || this.closed) {
+            return;
+        }
+        this.lastMeaningfulWriteAt = Date.now();
+        this.updateMetadata((metadata) => {
+            const next = nextMeaningfulMessageAt(metadata.lastMeaningfulMessageAt, at);
+            return next === metadata.lastMeaningfulMessageAt ? metadata : { ...metadata, lastMeaningfulMessageAt: next };
+        });
+    }
+
     updateMetadata(handler: (metadata: Metadata) => Metadata) {
         this.metadataLock.inLock(async () => {
             await backoff(async () => {
@@ -1018,6 +1070,10 @@ export class ApiSessionClient extends EventEmitter {
         if (this.closed) return;
         this.closed = true;
         logger.debug('[API] socket.close() called');
+        if (this.meaningfulWriteTimer) {
+            clearTimeout(this.meaningfulWriteTimer);
+            this.meaningfulWriteTimer = null;
+        }
         this.sendSync.stop();
         this.receiveSync.stop();
         this.clearReconnectTimers();
