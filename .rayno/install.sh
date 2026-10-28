@@ -73,8 +73,6 @@ on_exit() {
 trap on_exit EXIT
 mkdir -p "$BACKUP_DIR"
 
-FIRST_RUN=1
-[ -d "$HAPPY_LOCAL/server/pglite" ] && FIRST_RUN=0
 # The manifest starts after the last point where the user can say no, so a
 # refusal leaves nothing behind.
 start_manifest() {
@@ -320,9 +318,24 @@ done
 mf set settings.file "$SETTINGS"
 ok "serverUrl and webappUrl in $SETTINGS"
 
-if [ "$LINK_CLI" -eq 1 ] && [ "$daemon_was_running" -eq 1 ]; then
-    step "Restarting the Happy daemon"
-    info "the new happy binary stops the old daemon, and then starts its own"
+# A new machine has no CLI login, so make an account on this server. The
+# recovery key is the account. It is printed once at the end, and nothing
+# else keeps a copy of it outside the CLI's access.key.
+RECOVERY_KEY=""
+step "Signing the Happy CLI in"
+if [ -f "$CLI_HOME/access.key" ]; then
+    ok "the CLI is signed in already. The account stays."
+    info "if that login is for another server, move it away and run install.sh again"
+else
+    RECOVERY_KEY="$(node "$HAPPY_SRC/.rayno/lib/create-account.mjs" "http://127.0.0.1:$SERVER_PORT" "$CLI_HOME/access.key")" ||
+        die "could not make an account on the server"
+    mf setjson cli.accountCreated true
+    ok "made a new account and signed the CLI in"
+fi
+
+if [ "$LINK_CLI" -eq 1 ] && { [ "$daemon_was_running" -eq 1 ] || [ -n "$RECOVERY_KEY" ]; }; then
+    step "Starting the Happy daemon"
+    [ "$daemon_was_running" -eq 1 ] && info "the new happy binary stops the old daemon, and then starts its own"
     "$npm_bin/happy" daemon start || warn "the daemon did not start. Run 'happy daemon start'."
 fi
 
@@ -345,5 +358,16 @@ echo "  Web app: $WEB_PUBLIC_URL"
 echo "  Server:  $SERVER_PUBLIC_URL"
 echo "  Data:    $HAPPY_LOCAL (back up server/master-secret)"
 echo
-[ "$FIRST_RUN" -eq 1 ] && echo "  Next: open the web app and create an account, or run 'happy auth login'."
+echo "${C_BOLD}Sign in to Rayno${C_OFF}, or to the web app above, with these two values:"
+echo
+echo "  Happy server:  $SERVER_PUBLIC_URL"
+if [ -n "$RECOVERY_KEY" ]; then
+    echo "  Recovery key:  $RECOVERY_KEY"
+    echo
+    echo "  ${C_YEL}Save the recovery key now.${C_OFF} It is your account, and this is the only time"
+    echo "  it is shown. Anyone with it can read all of your sessions."
+else
+    echo "  Recovery key:  in the Happy app, open Settings > Account > Secret Key"
+fi
+echo
 echo "  Undo:  $HAPPY_SRC/.rayno/uninstall.sh"
