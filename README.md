@@ -73,8 +73,13 @@ cd happy
 The script installs the dependencies and builds the web app. It starts the
 server and the web app as launchd services, so they run after a restart.
 It publishes both ports with `tailscale serve`, links the global `happy`
-command to this clone, and points the CLI settings at your server. At the
-end, it prints the two addresses.
+command to this clone, and points the CLI settings at your server.
+
+When the CLI is not signed in yet, the script makes a new account on your
+server and signs the CLI in. At the end, it prints the server address and the
+recovery key of that account. Paste both into Rayno or into the web app.
+Save the recovery key at that time: the script shows it only once, and anyone
+with the key can read all of your sessions.
 
 | Command                          | What it does                                                      |
 | -------------------------------- | ----------------------------------------------------------------- |
