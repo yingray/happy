@@ -62,6 +62,8 @@ Replace `<machine>.<tailnet>.ts.net` with the name from `tailscale status`.
 You need macOS, Node.js 24, and pnpm. Tailscale with HTTPS certificates
 turned on is optional: with it, other devices can reach your server. Without
 it, the server and the web app answer only at `http://127.0.0.1` on this Mac.
+In that case, use Rayno in Chrome, or the web app at `http://127.0.0.1:3008`.
+Safari blocks an HTTPS page such as Rayno from calling an HTTP address.
 Replace `<repo-url>` with the URL of this repository.
 
 ### Install with one command

@@ -396,8 +396,10 @@ else
 fi
 if [ "$USE_TAILSCALE" -eq 0 ]; then
     echo
-    echo "  ${C_YEL}This address works only in a browser on this Mac.${C_OFF} To use other devices,"
-    echo "  install Tailscale, turn on HTTPS certificates, and run install.sh again."
+    echo "  ${C_YEL}This address works only in a browser on this Mac.${C_OFF} Use Rayno in Chrome,"
+    echo "  or the web app at $WEB_PUBLIC_URL in any browser. Safari blocks an HTTPS page"
+    echo "  from calling this HTTP address. To use other devices, install Tailscale, turn on"
+    echo "  HTTPS certificates, and run install.sh again."
 fi
 echo
 echo "  Undo:  $HAPPY_SRC/.rayno/uninstall.sh"
