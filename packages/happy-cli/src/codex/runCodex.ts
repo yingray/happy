@@ -3,6 +3,7 @@ import React from "react";
 import { ApiClient } from '@/api/api';
 import { CodexAppServerClient } from './codexAppServerClient';
 import type { ReasoningEffort } from './codexAppServerTypes';
+import { mergeUsageLimits } from '@/claude/utils/usageLimits';
 import { CodexPermissionHandler } from './utils/permissionHandler';
 import { ReasoningProcessor } from './utils/reasoningProcessor';
 import { DiffProcessor } from './utils/diffProcessor';
@@ -554,6 +555,15 @@ export async function runCodex(opts: {
     //
 
     client = new CodexAppServerClient(sandboxConfig);
+    client.setUsageLimitsHandler((patch) => {
+        // Codex reports a complete account snapshot. Merge it through the
+        // same backend-neutral state path that Claude uses so the Web client
+        // can render the existing weekly chip without provider-specific UI.
+        session.updateAgentState((currentState) => ({
+            ...currentState,
+            usageLimits: mergeUsageLimits(currentState.usageLimits, patch),
+        }));
+    });
 
     permissionHandler = new CodexPermissionHandler(session);
     // Drop any permission requests left in agent state from a previous CLI
@@ -827,6 +837,9 @@ export async function runCodex(opts: {
         logger.debug('[codex]: client.connect begin');
         await client.connect();
         logger.debug('[codex]: client.connect done');
+        // Fetch the first account snapshot immediately. The client also
+        // listens for updates and refreshes periodically while connected.
+        void client.refreshUsageLimits();
 
         if (opts.resumeThreadId) {
             await resumeExistingThread({
