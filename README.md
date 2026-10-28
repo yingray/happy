@@ -47,6 +47,130 @@ https://github.com/user-attachments/assets/deeeeaf5-e550-49bc-829f-1186898f441a
 | [slopus/happy-agent](https://github.com/slopus/happy-agent)                           | Happy Agent, the open-source agent runtime the desktop app runs on         |
 | [slopus/slopus.github.io](https://github.com/slopus/slopus.github.io)                 | The website and docs at happy.engineering                                  |
 
+## Self-host the server and the web app
+
+You can run your own Happy server and your own web app on your machine.
+They use two ports. Tailscale makes both available on your tailnet with HTTPS.
+
+| Part       | Local address           | Tailnet address                     |
+| ---------- | ----------------------- | ----------------------------------- |
+| Server API | `http://127.0.0.1:3007` | `https://<machine>.<tailnet>.ts.net:3007` |
+| Web app    | `http://127.0.0.1:3008` | `https://<machine>.<tailnet>.ts.net:3008` |
+
+Replace `<machine>.<tailnet>.ts.net` with the name from `tailscale status`.
+
+### 1. Get the code
+
+You need Node.js 24, pnpm, and Tailscale with HTTPS certificates turned on.
+
+Replace `<repo-url>` with the URL of this repository, and `<branch>` with
+the branch that has this guide.
+
+```sh
+git clone <repo-url> happy
+cd happy
+git checkout <branch>
+pnpm install
+```
+
+### 2. Start the server
+
+The server keeps its data in a PGlite database. Keep the data directory
+outside the repo, so a new checkout does not touch it.
+
+```sh
+export DATA_DIR="$HOME/.happy-local/server"
+mkdir -p "$DATA_DIR"
+# Make the master secret one time. Keep it: it signs every auth token.
+[ -f "$DATA_DIR/master-secret" ] || openssl rand -hex 32 > "$DATA_DIR/master-secret"
+chmod 600 "$DATA_DIR/master-secret"
+
+cd packages/happy-server
+export DB_PROVIDER=pglite
+export PGLITE_DIR="$DATA_DIR/pglite"
+export HANDY_MASTER_SECRET="$(cat "$DATA_DIR/master-secret")"
+export PORT=3007
+export HOST=127.0.0.1
+export PUBLIC_URL="https://<machine>.<tailnet>.ts.net:3007"
+pnpm exec tsx sources/standalone.ts migrate
+pnpm exec tsx sources/standalone.ts serve
+```
+
+In a second terminal, publish the port and check it:
+
+```sh
+tailscale serve --bg --https=3007 http://127.0.0.1:3007
+curl https://<machine>.<tailnet>.ts.net:3007/
+# Welcome to Happy Server!
+```
+
+The server has no web pages. That reply is all you get on this port.
+
+### 3. Start the web app
+
+The web app reads the server address at build time from
+`EXPO_PUBLIC_HAPPY_SERVER_URL`. Use the tailnet address, not `127.0.0.1`.
+Other devices open the web app, and `127.0.0.1` points to those devices.
+
+```sh
+cd packages/happy-app
+EXPO_PUBLIC_HAPPY_SERVER_URL="https://<machine>.<tailnet>.ts.net:3007" \
+  APP_ENV=development pnpm exec expo start --web --port 3008
+```
+
+In another terminal:
+
+```sh
+tailscale serve --bg --https=3008 http://127.0.0.1:3008
+```
+
+Open `https://<machine>.<tailnet>.ts.net:3008/`. The login screen shows the
+server address at the top. Make sure that it is your `:3007` address.
+
+### 4. Point the CLI at your server
+
+Add these two keys to `~/.happy/settings.json`. Keep the other keys in the file.
+
+```json
+{
+  "serverUrl": "http://127.0.0.1:3007",
+  "webappUrl": "https://<machine>.<tailnet>.ts.net:3008"
+}
+```
+
+The `HAPPY_SERVER_URL` and `HAPPY_WEBAPP_URL` environment variables
+override these keys. Then sign in:
+
+```sh
+happy auth login
+```
+
+### 5. Sign in to the web app
+
+Your account is a secret key that lives on your devices. The server does not
+have it. Use one of these ways to sign in:
+
+| Situation                       | What to do                                                        |
+| ------------------------------- | ----------------------------------------------------------------- |
+| You have no account yet         | Select **Create account** in the web app.                          |
+| The Happy app on your phone uses this server | Select **Login with mobile app**. On the phone, open **Settings › Account › Link New Device** and scan the QR code. |
+| You saved your secret key       | Select **Login with mobile app**, then **Use a secret key instead**. |
+
+An account on `app.happy.engineering` does not exist on your server.
+Make a new account, or move your phone app to this server first.
+
+### Stop the services
+
+Press `Ctrl+C` in each terminal. Then remove the Tailscale routes:
+
+```sh
+tailscale serve --https=3007 off
+tailscale serve --https=3008 off
+```
+
+Both services stop when you close their terminals. To keep them running,
+start them from a service manager such as launchd or systemd.
+
 ## Original Happy CLI
 
 The original CLI wraps the Claude Code and Codex harnesses directly in your
