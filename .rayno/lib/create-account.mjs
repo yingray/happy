@@ -2,6 +2,7 @@
 // Create a Happy account on a server and sign the Happy CLI in to it.
 //
 //   create-account.mjs <server url> <access.key path>
+//   create-account.mjs --print <access.key path>
 //
 // The account is a random 32-byte secret, the same as "Create account" in
 // the app. The secret is the seed of an Ed25519 key pair. The server gets
@@ -12,10 +13,44 @@
 // text that the app shows under Settings > Account > Secret Key.
 //
 // The script refuses to run when <access.key path> exists already.
+//
+// --print shows the recovery key of an existing legacy access.key. A newer
+// login keeps only a public key and a machine key, so it has no recovery key.
+// In that case the script prints nothing and exits 1.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+
+function recoveryKey(bytes) {
+    const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let bits = 0;
+    let value = 0;
+    let base32 = '';
+    for (const byte of bytes) {
+        value = (value << 8) | byte;
+        bits += 8;
+        while (bits >= 5) {
+            bits -= 5;
+            base32 += ALPHABET[(value >> bits) & 31];
+        }
+    }
+    if (bits > 0) base32 += ALPHABET[(value << (5 - bits)) & 31];
+    return base32.match(/.{1,5}/g).join('-');
+}
+
+if (process.argv[2] === '--print') {
+    const file = process.argv[3];
+    let secret;
+    try {
+        secret = Buffer.from(JSON.parse(fs.readFileSync(file, 'utf8')).secret || '', 'base64');
+    } catch {
+        process.exit(1);
+    }
+    if (secret.length !== 32) process.exit(1);
+    console.log(recoveryKey(secret));
+    process.exit(0);
+}
 
 const [serverUrl, accessKeyFile] = process.argv.slice(2);
 if (!serverUrl || !accessKeyFile) {
@@ -62,17 +97,4 @@ fs.writeFileSync(
     { mode: 0o600, flag: 'wx' },
 );
 
-const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-let bits = 0;
-let value = 0;
-let base32 = '';
-for (const byte of secret) {
-    value = (value << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-        bits -= 5;
-        base32 += ALPHABET[(value >> bits) & 31];
-    }
-}
-if (bits > 0) base32 += ALPHABET[(value << (5 - bits)) & 31];
-console.log(base32.match(/.{1,5}/g).join('-'));
+console.log(recoveryKey(secret));
