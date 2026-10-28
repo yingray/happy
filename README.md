@@ -59,8 +59,10 @@ They use two ports. Tailscale makes both available on your tailnet with HTTPS.
 
 Replace `<machine>.<tailnet>.ts.net` with the name from `tailscale status`.
 
-You need macOS, Node.js 24, pnpm, and Tailscale with HTTPS certificates
-turned on. Replace `<repo-url>` with the URL of this repository.
+You need macOS, Node.js 24, and pnpm. Tailscale with HTTPS certificates
+turned on is optional: with it, other devices can reach your server. Without
+it, the server and the web app answer only at `http://127.0.0.1` on this Mac.
+Replace `<repo-url>` with the URL of this repository.
 
 ### Install with one command
 
@@ -72,19 +74,22 @@ cd happy
 
 The script installs the dependencies and builds the web app. It starts the
 server and the web app as launchd services, so they run after a restart.
-It publishes both ports with `tailscale serve`, links the global `happy`
-command to this clone, and points the CLI settings at your server.
+When Tailscale is ready, it publishes both ports with `tailscale serve`.
+It links the global `happy` command to this clone, and points the CLI
+settings at your server.
 
 When the CLI is not signed in yet, the script makes a new account on your
 server and signs the CLI in. At the end, it prints the server address and the
 recovery key of that account. Paste both into Rayno or into the web app.
-Save the recovery key at that time: the script shows it only once, and anyone
-with the key can read all of your sessions.
+Save the recovery key in a safe place. Anyone with the key can read all of
+your sessions. When the CLI uses a newer login that does not keep the key,
+the script tells you to copy it from the Happy app instead.
 
 | Command                          | What it does                                                      |
 | -------------------------------- | ----------------------------------------------------------------- |
 | `./.rayno/install.sh`            | Install. Run it again after `git pull` to upgrade.                |
 | `./.rayno/install.sh --no-cli-link` | Install, but do not change the global `happy` command.         |
+| `HAPPY_NO_TAILSCALE=1 ./.rayno/install.sh` | Install for this Mac only, without Tailscale.            |
 | `./.rayno/uninstall.sh`          | Remove the services, routes, link, and settings. Keep your data.  |
 | `./.rayno/uninstall.sh --purge`  | Also delete the data, after a final archive in your home folder.  |
 

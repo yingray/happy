@@ -19,6 +19,10 @@
 #   HAPPY_WEB_PORT      web app port [3008]
 #   HAPPY_LABEL_PREFIX  launchd label prefix [local.happy]
 #   HAPPY_HOME_DIR      Happy CLI folder [~/.happy]
+#   HAPPY_NO_TAILSCALE  set to 1 to skip Tailscale and use 127.0.0.1 only
+#
+# Without Tailscale (or with its HTTPS certificates off), the server and the
+# web app answer only on this Mac, at http://127.0.0.1.
 #
 set -euo pipefail
 . "$(dirname "$0")/lib/common.sh"
@@ -38,7 +42,7 @@ done
 
 step "Checking this machine"
 [ "$(uname -s)" = Darwin ] || die "this installer supports macOS only"
-for c in git node pnpm tailscale curl lsof launchctl; do
+for c in git node pnpm curl lsof launchctl; do
     command -v "$c" >/dev/null || die "'$c' is not on PATH"
 done
 NODE_BIN="$(node -p process.execPath)"
@@ -46,16 +50,32 @@ node_major="$(node -p 'process.versions.node.split(".")[0]')"
 [ "$node_major" -ge 24 ] || die "Node.js 24 or newer is required (found $(node -v))"
 ok "node $(node -v), pnpm $(pnpm -v)"
 
-if ! HOST="$(tailnet_host 2>&1)"; then
+# With Tailscale, both services get HTTPS addresses on the tailnet, so other
+# devices can use them. Without it, they answer only on this Mac.
+USE_TAILSCALE=0
+if [ "${HAPPY_NO_TAILSCALE:-0}" = 1 ]; then
+    info "HAPPY_NO_TAILSCALE=1: Tailscale is skipped"
+elif ! command -v tailscale >/dev/null; then
+    warn "Tailscale is not installed. Other devices cannot reach this server."
+elif ! HOST="$(tailnet_host 2>&1)"; then
     case "$HOST" in
-        *not-running*) die "Tailscale is not running. Start it and sign in." ;;
-        *no-https*) die "Tailscale HTTPS certificates are off. Turn on HTTPS in the DNS page of the Tailscale admin console." ;;
-        *) die "cannot read the Tailscale status: $HOST" ;;
+        *not-running*) warn "Tailscale is not running. Other devices cannot reach this server." ;;
+        *no-https*) warn "Tailscale HTTPS certificates are off. Turn on HTTPS in the DNS page of the Tailscale admin console, then run install.sh again." ;;
+        *) warn "cannot read the Tailscale status: $HOST" ;;
     esac
+else
+    USE_TAILSCALE=1
 fi
-SERVER_PUBLIC_URL="https://$HOST:$SERVER_PORT"
-WEB_PUBLIC_URL="https://$HOST:$WEB_PORT"
-ok "tailnet host $HOST"
+if [ "$USE_TAILSCALE" -eq 1 ]; then
+    SERVER_PUBLIC_URL="https://$HOST:$SERVER_PORT"
+    WEB_PUBLIC_URL="https://$HOST:$WEB_PORT"
+    ok "tailnet host $HOST"
+else
+    HOST=127.0.0.1
+    SERVER_PUBLIC_URL="http://127.0.0.1:$SERVER_PORT"
+    WEB_PUBLIC_URL="http://127.0.0.1:$WEB_PORT"
+    ok "using $HOST. The services work only in a browser on this Mac."
+fi
 
 mkdir -p "$HAPPY_LOCAL"
 chmod 700 "$HAPPY_LOCAL"
@@ -242,22 +262,24 @@ ok "web app is up"
 
 # --- 7. Tailscale -------------------------------------------------------------
 
-step "Publishing both ports on the tailnet"
-for port in "$SERVER_PORT" "$WEB_PORT"; do
-    want="http://127.0.0.1:$port"
-    have="$(serve_target "$HOST" "$port")"
-    if [ "$have" = none ]; then
-        tailscale serve --bg --https="$port" "$want" >/dev/null
-        mf setjson "tailscale.$port.added" true
-        ok "added https://$HOST:$port"
-    elif [ "$have" = "$want" ]; then
-        # A route that was here before the first install is not ours to remove.
-        mf has "tailscale.$port.added" || mf setjson "tailscale.$port.added" false
-        ok "https://$HOST:$port is already published"
-    else
-        die "https://$HOST:$port already goes to '$have'. Remove that route or pick another port."
-    fi
-done
+if [ "$USE_TAILSCALE" -eq 1 ]; then
+    step "Publishing both ports on the tailnet"
+    for port in "$SERVER_PORT" "$WEB_PORT"; do
+        want="http://127.0.0.1:$port"
+        have="$(serve_target "$HOST" "$port")"
+        if [ "$have" = none ]; then
+            tailscale serve --bg --https="$port" "$want" >/dev/null
+            mf setjson "tailscale.$port.added" true
+            ok "added https://$HOST:$port"
+        elif [ "$have" = "$want" ]; then
+            # A route that was here before the first install is not ours to remove.
+            mf has "tailscale.$port.added" || mf setjson "tailscale.$port.added" false
+            ok "https://$HOST:$port is already published"
+        else
+            die "https://$HOST:$port already goes to '$have'. Remove that route or pick another port."
+        fi
+    done
+fi
 
 # --- 8. CLI -------------------------------------------------------------------
 
@@ -326,6 +348,8 @@ step "Signing the Happy CLI in"
 if [ -f "$CLI_HOME/access.key" ]; then
     ok "the CLI is signed in already. The account stays."
     info "if that login is for another server, move it away and run install.sh again"
+    # An older CLI login keeps the account secret, so its key can be shown again.
+    RECOVERY_KEY="$(node "$HAPPY_SRC/.rayno/lib/create-account.mjs" --print "$CLI_HOME/access.key" 2>/dev/null || true)"
 else
     RECOVERY_KEY="$(node "$HAPPY_SRC/.rayno/lib/create-account.mjs" "http://127.0.0.1:$SERVER_PORT" "$CLI_HOME/access.key")" ||
         die "could not make an account on the server"
@@ -341,7 +365,7 @@ fi
 
 # --- 9. Verify ----------------------------------------------------------------
 
-step "Checking both public addresses"
+step "Checking both addresses"
 body="$(curl -s --max-time 10 "$SERVER_PUBLIC_URL/" || true)"
 [ "$body" = "Welcome to Happy Server!" ] || die "$SERVER_PUBLIC_URL did not answer as the Happy server (got: ${body:0:80})"
 ok "$SERVER_PUBLIC_URL"
@@ -364,10 +388,16 @@ echo "  Happy server:  $SERVER_PUBLIC_URL"
 if [ -n "$RECOVERY_KEY" ]; then
     echo "  Recovery key:  $RECOVERY_KEY"
     echo
-    echo "  ${C_YEL}Save the recovery key now.${C_OFF} It is your account, and this is the only time"
-    echo "  it is shown. Anyone with it can read all of your sessions."
+    echo "  ${C_YEL}Save the recovery key now.${C_OFF} It is your account."
+    echo "  Anyone with it can read all of your sessions."
 else
-    echo "  Recovery key:  in the Happy app, open Settings > Account > Secret Key"
+    echo "  Recovery key:  this CLI login does not keep it. In the Happy app,"
+    echo "                 open Settings > Account > Secret Key."
+fi
+if [ "$USE_TAILSCALE" -eq 0 ]; then
+    echo
+    echo "  ${C_YEL}This address works only in a browser on this Mac.${C_OFF} To use other devices,"
+    echo "  install Tailscale, turn on HTTPS certificates, and run install.sh again."
 fi
 echo
 echo "  Undo:  $HAPPY_SRC/.rayno/uninstall.sh"
