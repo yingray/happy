@@ -59,17 +59,48 @@ They use two ports. Tailscale makes both available on your tailnet with HTTPS.
 
 Replace `<machine>.<tailnet>.ts.net` with the name from `tailscale status`.
 
-### 1. Get the code
+You need macOS, Node.js 24, pnpm, and Tailscale with HTTPS certificates
+turned on. Replace `<repo-url>` with the URL of this repository.
 
-You need Node.js 24, pnpm, and Tailscale with HTTPS certificates turned on.
-
-Replace `<repo-url>` with the URL of this repository, and `<branch>` with
-the branch that has this guide.
+### Install with one command
 
 ```sh
 git clone <repo-url> happy
 cd happy
-git checkout <branch>
+./.rayno/install.sh
+```
+
+The script installs the dependencies and builds the web app. It starts the
+server and the web app as launchd services, so they run after a restart.
+It publishes both ports with `tailscale serve`, links the global `happy`
+command to this clone, and points the CLI settings at your server. At the
+end, it prints the two addresses.
+
+| Command                          | What it does                                                      |
+| -------------------------------- | ----------------------------------------------------------------- |
+| `./.rayno/install.sh`            | Install. Run it again after `git pull` to upgrade.                |
+| `./.rayno/install.sh --no-cli-link` | Install, but do not change the global `happy` command.         |
+| `./.rayno/uninstall.sh`          | Remove the services, routes, link, and settings. Keep your data.  |
+| `./.rayno/uninstall.sh --purge`  | Also delete the data, after a final archive in your home folder.  |
+
+The install records each change in `~/.happy-local/install-manifest.json`.
+Uninstall reads that file and undoes only those changes. A Tailscale route or
+a setting that you made yourself stays.
+
+Keep a copy of `~/.happy-local/server/master-secret`. When you lose it, every
+device must sign in again.
+
+To use other ports or folders, set `HAPPY_SERVER_PORT`, `HAPPY_WEB_PORT`,
+`HAPPY_LOCAL`, or `HAPPY_HOME_DIR`. Use the same values for uninstall.
+Run `./.rayno/install.sh --help` for the full list.
+
+The steps below do the same work by hand.
+
+### 1. Get the code
+
+```sh
+git clone <repo-url> happy
+cd happy
 pnpm install
 ```
 
