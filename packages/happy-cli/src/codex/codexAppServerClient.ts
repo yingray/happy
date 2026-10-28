@@ -50,6 +50,8 @@ import type {
 import type { SandboxConfig } from '@/persistence';
 import { initializeSandbox, wrapForMcpTransport } from '@/sandbox/manager';
 import packageJson from '../../package.json';
+import { createCodexUsageLimitsTracker } from './utils/usageLimits';
+import type { UsageLimitsPatch } from '@/claude/utils/usageLimits';
 
 type PendingRequest = {
     resolve: (result: unknown) => void;
@@ -76,6 +78,8 @@ export type ApprovalHandler = (params: {
     serverName?: string;
     message?: string;
 }) => Promise<ReviewDecision>;
+
+export type UsageLimitsHandler = (patch: UsageLimitsPatch) => void;
 
 function stringOrNull(value: unknown): string | null {
     return typeof value === 'string' && value.length > 0 ? value : null;
@@ -242,6 +246,10 @@ export class CodexAppServerClient {
     // Tracks in-flight interruptTurn() RPCs so sendTurnAndWait can wait for them
     // before starting a new turn (prevents stale turn/interrupt from aborting the next turn).
     private pendingInterrupt: Promise<void> | null = null;
+    private usageLimitsHandler: UsageLimitsHandler | null = null;
+    private usageLimitsRefreshTimer: ReturnType<typeof setInterval> | null = null;
+    private usageLimitsRefreshInFlight: Promise<void> | null = null;
+    private usageLimitsTracker = createCodexUsageLimitsTracker();
     private notificationProtocol: 'unknown' | 'legacy' | 'raw' = 'unknown';
     private completedTurnIds = new Set<string>();
     private rawFileChangesByItemId = new Map<string, LegacyPatchChanges>();
@@ -279,6 +287,74 @@ export class CodexAppServerClient {
 
     setApprovalHandler(handler: ApprovalHandler): void {
         this.approvalHandler = handler;
+    }
+
+    setUsageLimitsHandler(handler: UsageLimitsHandler | null): void {
+        this.usageLimitsHandler = handler;
+        if (!handler) {
+            this.stopUsageLimitsRefresh();
+        } else if (this.connected) {
+            this.startUsageLimitsRefresh();
+            void this.refreshUsageLimits();
+        }
+    }
+
+    /**
+     * Read the current ChatGPT/Codex account limits. The app-server endpoint
+     * is optional across Codex versions, so an unsupported endpoint is logged
+     * and does not prevent the coding session from starting.
+     */
+    async refreshUsageLimits(): Promise<void> {
+        if (!this.connected || !this.usageLimitsHandler || this.usageLimitsRefreshInFlight) return;
+        const epoch = this.processEpoch;
+        const refresh = (async () => {
+            try {
+                const result = await this.request('account/rateLimits/read', {}, 10_000);
+                if (epoch !== this.processEpoch || !this.connected) return;
+                const patch = this.usageLimitsTracker.fromRead(result);
+                if (patch) {
+                    this.usageLimitsHandler?.(patch);
+                }
+            } catch (error) {
+                logger.debug('[CodexAppServer] Failed to refresh rate limits:', error);
+            }
+        })();
+        this.usageLimitsRefreshInFlight = refresh;
+        try {
+            await refresh;
+        } finally {
+            if (this.usageLimitsRefreshInFlight === refresh) {
+                this.usageLimitsRefreshInFlight = null;
+            }
+        }
+    }
+
+    private startUsageLimitsRefresh(): void {
+        this.stopUsageLimitsRefresh();
+        // Allow a reconnect to start a fresh read immediately. The old RPC
+        // is rejected below, and its epoch check prevents stale data from
+        // reaching the new connection.
+        this.usageLimitsRefreshInFlight = null;
+        this.usageLimitsRefreshTimer = setInterval(() => {
+            void this.refreshUsageLimits();
+        }, 5 * 60_000);
+        this.usageLimitsRefreshTimer.unref?.();
+    }
+
+    private stopUsageLimitsRefresh(): void {
+        if (this.usageLimitsRefreshTimer) {
+            clearInterval(this.usageLimitsRefreshTimer);
+            this.usageLimitsRefreshTimer = null;
+        }
+    }
+
+    private handleUsageLimitsNotification(params: unknown): void {
+        // The update notification can contain only the window that changed.
+        // Merge it into the last snapshot instead of clearing other windows.
+        const patch = this.usageLimitsTracker.fromUpdate(params);
+        if (patch) {
+            this.usageLimitsHandler?.(patch);
+        }
     }
 
     private extractTurnId(params: any): string | null {
@@ -701,11 +777,16 @@ export class CodexAppServerClient {
         await this.request('initialize', initParams);
         this.notify('initialized');
         this.connected = true;
+        if (this.usageLimitsHandler) {
+            this.startUsageLimitsRefresh();
+        }
         logger.debug('[CodexAppServer] Connected and initialized');
     }
 
     private async disconnectInternal(opts?: { preserveThreadState?: boolean }): Promise<void> {
         if (!this.connected && !this.process) return;
+
+        this.stopUsageLimitsRefresh();
 
         const proc = this.process;
         const pid = proc?.pid;
@@ -958,6 +1039,7 @@ export class CodexAppServerClient {
         const threadId = this._threadId;
         await this.disconnectInternal({ preserveThreadState: !!threadId });
         await this.connect();
+        void this.refreshUsageLimits();
 
         if (!threadId) {
             return false;
@@ -1509,6 +1591,11 @@ export class CodexAppServerClient {
     }
 
     private handleNotification(method: string, params: any): void {
+        if (method === 'account/rateLimits/updated') {
+            this.handleUsageLimitsNotification(params);
+            return;
+        }
+
         // codex/event notifications: either `codex/event` or `codex/event/<type>`
         if (method === 'codex/event' || method.startsWith('codex/event/')) {
             this.notificationProtocol = 'legacy';

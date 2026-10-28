@@ -178,6 +178,145 @@ describe('CodexAppServerClient sandbox integration', () => {
         await client.disconnect();
     });
 
+    it('reads and forwards Codex account rate limits', async () => {
+        const requests: MockRpcMessage[] = [];
+        const proc = createMockProcess({
+            onRequest: (msg, stdout) => {
+                requests.push(msg);
+                if (msg.method === 'account/rateLimits/read' && msg.id != null) {
+                    setTimeout(() => {
+                        pushJsonLine(stdout, {
+                            id: msg.id,
+                            result: {
+                                rateLimits: {
+                                    primary: {
+                                        usedPercent: 42,
+                                        windowDurationMins: 10080,
+                                        resetsAt: 1_789_105_848,
+                                    },
+                                },
+                            },
+                        });
+                    }, 0);
+                }
+            },
+        });
+        mockSpawn.mockImplementation(() => proc);
+
+        const { CodexAppServerClient } = await import('./codexAppServerClient');
+        const client = new CodexAppServerClient();
+        const patches: unknown[] = [];
+        client.setUsageLimitsHandler((patch) => patches.push(patch));
+
+        await client.connect();
+        await client.refreshUsageLimits();
+
+        expect(requests.some((request) => request.method === 'account/rateLimits/read')).toBe(true);
+        expect(patches).toHaveLength(1);
+        expect(patches[0]).toEqual(expect.objectContaining({
+            replace: true,
+            windows: [expect.objectContaining({
+                id: 'seven_day',
+                utilization: 42,
+                resetsAt: 1_789_105_848_000,
+            })],
+        }));
+
+        pushJsonLine(proc.stdout as NodeJS.ReadableStream & { push: (chunk: string) => void }, {
+            method: 'account/rateLimits/updated',
+            params: {
+                rateLimits: {
+                    primary: {
+                        usedPercent: 43,
+                        windowDurationMins: 10080,
+                        resetsAt: 1_789_105_848,
+                    },
+                },
+            },
+        });
+        await waitFor(() => patches.length === 2);
+        expect(patches[1]).toEqual(expect.objectContaining({
+            replace: false,
+            windows: [expect.objectContaining({ utilization: 43 })],
+        }));
+
+        // A model-specific bucket is dropped. A window without a duration
+        // keeps the id of its slot.
+        pushJsonLine(proc.stdout as NodeJS.ReadableStream & { push: (chunk: string) => void }, {
+            method: 'account/rateLimits/updated',
+            params: {
+                rateLimits: {
+                    limitId: 'codex_other',
+                    primary: { usedPercent: 99, windowDurationMins: 10080, resetsAt: 1_789_105_848 },
+                },
+            },
+        });
+        pushJsonLine(proc.stdout as NodeJS.ReadableStream & { push: (chunk: string) => void }, {
+            method: 'account/rateLimits/updated',
+            params: {
+                rateLimits: {
+                    limitId: 'codex',
+                    primary: { usedPercent: 44, windowDurationMins: null, resetsAt: null },
+                },
+            },
+        });
+        await waitFor(() => patches.length === 3);
+        expect(patches[2]).toEqual(expect.objectContaining({
+            replace: false,
+            windows: [expect.objectContaining({ id: 'seven_day', utilization: 44 })],
+        }));
+
+        await client.disconnect();
+    });
+
+    it('refreshes account limits after reconnecting the app-server', async () => {
+        const firstRequests: MockRpcMessage[] = [];
+        const secondRequests: MockRpcMessage[] = [];
+        const respondToRateLimits = (requests: MockRpcMessage[]) => (
+            msg: MockRpcMessage,
+            stdout: NodeJS.ReadableStream & { push: (chunk: string) => void },
+        ) => {
+            requests.push(msg);
+            if (msg.method === 'account/rateLimits/read' && msg.id != null) {
+                setTimeout(() => {
+                    pushJsonLine(stdout, {
+                        id: msg.id,
+                        result: {
+                            rateLimits: {
+                                primary: {
+                                    usedPercent: 42,
+                                    windowDurationMins: 10080,
+                                    resetsAt: 1_789_105_848,
+                                },
+                            },
+                        },
+                    });
+                }, 0);
+            }
+        };
+        const proc1 = createMockProcess({ onRequest: respondToRateLimits(firstRequests) });
+        const proc2 = createMockProcess({ onRequest: respondToRateLimits(secondRequests) });
+        mockSpawn
+            .mockImplementationOnce(() => proc1)
+            .mockImplementationOnce(() => proc2);
+
+        const { CodexAppServerClient } = await import('./codexAppServerClient');
+        const client = new CodexAppServerClient();
+        const patches: unknown[] = [];
+        client.setUsageLimitsHandler((patch) => patches.push(patch));
+
+        await client.connect();
+        await client.refreshUsageLimits();
+        expect(patches).toHaveLength(1);
+
+        await client.reconnectAndResumeThread();
+        await waitFor(() => secondRequests.some((request) => request.method === 'account/rateLimits/read'));
+        await waitFor(() => patches.length === 2);
+        expect(patches).toHaveLength(2);
+
+        await client.disconnect();
+    });
+
     it('falls back to non-sandbox transport when sandbox initialization fails', async () => {
         mockInitializeSandbox.mockRejectedValue(new Error('sandbox init failed'));
         const { CodexAppServerClient } = await import('./codexAppServerClient');
