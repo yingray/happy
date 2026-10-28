@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#
+# Block a push when a pushed commit has no clean Codex privacy review.
+#
+# This is the last gate. It catches commits that never sat on a local
+# branch, for example a push from a detached HEAD. Commits that are already
+# reviewed or already public pass at once. The shared rules are in
+# privacy-review-lib.sh.
+#
+set -o pipefail
+
+repo_root="$(git rev-parse --show-toplevel)" || exit 1
+cd "$repo_root" || exit 1
+. "$(git rev-parse --git-path hooks)/privacy-review-lib.sh" || exit 1
+
+zero="0000000000000000000000000000000000000000"
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ "$local_sha" != "$zero" ] || continue
+    range=("$local_sha")
+    if [ "$remote_sha" != "$zero" ] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+        range+=("^$remote_sha")
+    fi
+    if ! privacy_check_commits "${range[@]}"; then
+        echo "privacy review: no clean review for $(git log -1 --format='%h %s' "$privacy_failed_commit" 2>/dev/null)." >&2
+        echo "privacy review: the push to $remote_ref is blocked." >&2
+        exit 1
+    fi
+done
+exit 0

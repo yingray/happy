@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# Stop git from moving a local branch to commits that have no clean Codex
+# privacy review.
+#
+# This closes the gap that commit-msg leaves. Cherry-pick, revert, rebase,
+# am, and `commit --no-verify` make commits without calling commit-msg. All
+# of them move a branch at the end, and this hook runs just before that move.
+# A non-zero exit in the "prepared" state cancels the move.
+#
+# Only refs/heads/* are checked, and only the commits that the move adds:
+# reachable from the new tip but not from the old tip. So a branch can always
+# go back to where it was, for example in `git rebase --abort`. Commits that
+# are already reviewed, or that are already public, pass at once. The shared
+# rules are in privacy-review-lib.sh.
+#
+set -o pipefail
+
+state="$1"
+updates="$(cat)"
+[ "$state" = "prepared" ] || exit 0
+
+zero="0000000000000000000000000000000000000000"
+targets=()
+while read -r old new ref; do
+    case "$ref" in
+        refs/heads/*) ;;
+        *) continue ;;
+    esac
+    [ -n "$new" ] && [ "$new" != "$zero" ] || continue
+    [ "$(git cat-file -t "$new" 2>/dev/null)" = "commit" ] || continue
+    # Some commands send an all-zero old value, which means "not checked".
+    # The ref is not moved yet, so read its current tip directly.
+    old="$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null || true)"
+    [ "$new" != "$old" ] || continue
+    targets+=("$new:$old:$ref")
+done <<< "$updates"
+[ "${#targets[@]}" -gt 0 ] || exit 0
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+[ -n "$repo_root" ] && cd "$repo_root"
+. "$(git rev-parse --git-path hooks)/privacy-review-lib.sh" || exit 1
+
+for target in "${targets[@]}"; do
+    new="${target%%:*}"
+    rest="${target#*:}"
+    old="${rest%%:*}"
+    ref="${rest#*:}"
+    range=("$new")
+    [ -n "$old" ] && range+=("^$old")
+    if ! privacy_check_commits "${range[@]}"; then
+        echo "privacy review: no clean review for $(git log -1 --format='%h %s' "$privacy_failed_commit" 2>/dev/null)." >&2
+        echo "privacy review: ${ref#refs/heads/} was not moved." >&2
+        exit 1
+    fi
+done
+exit 0

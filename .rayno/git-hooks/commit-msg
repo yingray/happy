@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+#
+# Block a commit until a Codex privacy review of the staged changes and the
+# commit message is clean. One Codex call covers both.
+#
+# Installed by .rayno/install-git-hooks.sh. The shared rules are in
+# privacy-review-lib.sh.
+#
+# The message is reviewed as git stores it, with comment lines removed.
+# During a merge, a file is also skipped when its staged content is the same
+# as MERGE_HEAD and MERGE_HEAD is public. A clean review records the patch-id
+# of the staged diff and the hash of the message, so the reference-transaction
+# hook does not review the new commit again.
+#
+set -o pipefail
+
+msg_file="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")" || exit 1
+repo_root="$(git rev-parse --show-toplevel)" || exit 1
+cd "$repo_root" || exit 1
+. "$(git rev-parse --git-path hooks)/privacy-review-lib.sh" || exit 1
+
+message_key="$(git stripspace --strip-comments < "$msg_file" | privacy_message_key)"
+patch_id="$(git diff --cached | privacy_patch_id)"
+
+merge_head=""
+if [ -f "$privacy_git_dir/MERGE_HEAD" ]; then
+    merge_head="$(head -n 1 "$privacy_git_dir/MERGE_HEAD")"
+    privacy_is_public_commit "$merge_head" || merge_head=""
+fi
+
+files=()
+if [ -n "$patch_id" ] && ! privacy_is_approved "$patch_id"; then
+    while IFS= read -r -d '' path; do
+        blob="$(git rev-parse -q --verify ":$path" 2>/dev/null || true)"
+        privacy_blob_at_ref_is "$blob" "$PRIVACY_UPSTREAM_REF" "$path" && continue
+        [ -n "$merge_head" ] && privacy_blob_at_ref_is "$blob" "$merge_head" "$path" && continue
+        files+=("$path")
+    done < <(git diff --cached --name-only -z --diff-filter=ACMRT)
+fi
+
+diff_cmd=""
+[ "${#files[@]}" -eq 0 ] || diff_cmd="git diff --cached"
+message_cmd=""
+privacy_is_approved "$message_key" || message_cmd="git stripspace --strip-comments < '$msg_file'"
+
+if { [ -z "$diff_cmd" ] && [ -z "$message_cmd" ]; } || ! privacy_is_public; then
+    echo "privacy review: nothing new to the public; skipped."
+    privacy_approve "$patch_id"
+    privacy_approve "$message_key"
+    exit 0
+fi
+
+if privacy_run_review "$diff_cmd" "$message_cmd" "${files[@]}"; then
+    echo "privacy review: clean."
+    privacy_approve "$patch_id"
+    privacy_approve "$message_key"
+    exit 0
+fi
+
+echo "privacy review: findings. The commit is blocked." >&2
+exit 1
