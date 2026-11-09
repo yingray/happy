@@ -21,16 +21,13 @@ type Case = { name: string; receipts: boolean; rows: AttentionRow[]; expect: Att
 const fixtures: { cases: Case[] } = JSON.parse(readFileSync(join(__dirname, 'attentionCore.fixtures.json'), 'utf8'));
 const zero: AttentionCounters = { assistantSeq: 0, userSeq: 0, optionsSeq: 0 };
 
-// Pages of `size` rows from the newest down, with the marks of the full range, as a Rayno scan reads them.
-function pagedFold(item: Case, size: number): AttentionCounters {
+// Every row from the newest down, with the marks of the full range, as a Rayno scan classifies when it stops.
+function newestFirstFold(item: Case): AttentionCounters {
     const marks = trustedSubagentMarks(markSubagents(new Map(), item.rows), 0);
     const byId = new Map(item.rows.map((row) => [row.id, row]));
-    const sorted = [...item.rows].sort((a, b) => b.seq - a.seq);
     let state = zero;
-    for (let start = 0; start < sorted.length; start += size) {
-        for (const row of sorted.slice(start, start + size)) {
-            state = attentionCounters(state, row, marks, item.receipts, (id) => byId.get(id));
-        }
+    for (const row of [...item.rows].sort((a, b) => b.seq - a.seq)) {
+        state = attentionCounters(state, row, marks, item.receipts, (id) => byId.get(id));
     }
     return state;
 }
@@ -87,11 +84,11 @@ describe('vendored attention core', () => {
         expect(hash.slice(0, 12)).toBe(ATTENTION_CORE_HASH);
     });
 
-    it.each(fixtures.cases.map((item) => [item.name, item] as const))('counts "%s" the same way in a summary, pages and the tracker', (_, item) => {
+    it.each(fixtures.cases.map((item) => [item.name, item] as const))('counts "%s" the same way in a summary, a newest-first fold with full-range marks and the tracker', (_, item) => {
         const { pending, ...counters } = item.expect;
 
         expect(summarizeRows(item.rows, item.receipts)).toEqual(item.expect);
-        expect([2, 3].map((size) => pagedFold(item, size))).toEqual([counters, counters]);
+        expect(newestFirstFold(item)).toEqual(counters);
         expect(tracked(item.rows, item.receipts)).toEqual({ ...item.expect, complete: true });
     });
 

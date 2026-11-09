@@ -51,6 +51,11 @@ export class ListSummaryWriter {
     /** True when the tracker has rows that the last write did not include. */
     dirty = false;
 
+    /** True when a turn boundary or a reply with options came after the last `take`. */
+    get boundary(): boolean {
+        return this.boundaryPending;
+    }
+
     /**
      * @param schedule - Asks the client for a write. `now` is true at a turn boundary, otherwise the client
      * arms the shared timer.
@@ -92,9 +97,13 @@ export class ListSummaryWriter {
         this.request();
     }
 
+    /**
+     * `to` is at least the newest observed seq. The client can observe a row before it moves its receive
+     * cursor, and the counters must never be above `to`.
+     */
     summary(to: number): ListSummary {
         const { assistantSeq, userSeq, optionsSeq, pending, complete } = this.tracker.summary();
-        return { v: 1, core: ATTENTION_CORE_HASH, to, complete, pending, receipts: false, assistantSeq, userSeq, optionsSeq };
+        return { v: 1, core: ATTENTION_CORE_HASH, to: Math.max(to, this.lastSeq), complete, pending, receipts: false, assistantSeq, userSeq, optionsSeq };
     }
 
     /**

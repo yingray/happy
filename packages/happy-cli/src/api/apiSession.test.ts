@@ -278,6 +278,8 @@ describe('ApiSessionClient v3 messages API migration', () => {
 
     it('clears both retries on connect and can reconnect after a later disconnect', async () => {
         vi.useFakeTimers();
+        // The first list summary write succeeds, so it arms no retry timer.
+        mockSocket.emitWithAck.mockImplementation(async (_event: string, payload: any) => ({ result: 'success', version: 1, metadata: payload.metadata }));
         mockSocket.connected = false;
         mockAxiosGet.mockResolvedValueOnce({ data: { messages: [], hasMore: false } });
         const client = new ApiSessionClient('fake-token', session);
@@ -1113,11 +1115,12 @@ describe('ApiSessionClient v3 messages API migration', () => {
             expect(hung).toHaveBeenCalledTimes(1);
             expect((client as any).metadataLock.promiseResolverQueue).toHaveLength(0);
 
-            // The first write gives up after 30 s. The rows that came during it go out 15 s later.
-            await vi.advanceTimersByTimeAsync(30_000);
+            // The first write gives up after 30 s. The boundary rows that came during it go out at once.
+            await vi.advanceTimersByTimeAsync(29_999);
             expect(hung).toHaveBeenCalledTimes(3);
-            await vi.advanceTimersByTimeAsync(15_000);
+            await vi.advanceTimersByTimeAsync(1);
             expect(hung).toHaveBeenCalledTimes(4);
+            expect((client as any).metadataLock.promiseResolverQueue).toHaveLength(0);
             const payload = hung.mock.calls[3][1] as { metadata: string };
             expect(decrypt(session.encryptionKey, session.encryptionVariant, decodeBase64(payload.metadata)).listSummary)
                 .toEqual(summaryOf(3, { assistantSeq: 2, optionsSeq: 2 }));
@@ -1174,10 +1177,60 @@ describe('ApiSessionClient v3 messages API migration', () => {
             expect((client as any).lastReceivedSeq).toBe(0);
             await fetchRows(client, [fetchedRow(1, options), fetchedRow(2, turnEnd(2))]);
 
+            // The first write covers the observed row, so `to` is never below the counters.
             await waitForCheck(() => expect(metadataWrites().map((m: any) => m.listSummary)).toEqual([
-                summaryOf(0, { assistantSeq: 1, optionsSeq: 1 }),
+                summaryOf(1, { assistantSeq: 1, optionsSeq: 1 }),
                 summaryOf(2, { assistantSeq: 1, optionsSeq: 1 }),
             ]));
+        });
+
+        it('writes a ready row that comes during a turn-end write at once after the ack', async () => {
+            vi.useFakeTimers();
+            let version = 0;
+            const acks: number[] = [];
+            mockSocket.emitWithAck.mockImplementation(async (event: string, payload: any) => {
+                if (event !== 'update-metadata') return { result: 'error' };
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                version += 1;
+                acks.push(Date.now());
+                return { result: 'success', version, metadata: payload.metadata };
+            });
+            mockSocket.timeout = vi.fn(() => mockSocket);
+            session.metadata = { ...session.metadata, listSummary: summaryOf(0) } as any;
+            const client = new ApiSessionClient('fake-token', session);
+            await fetchRows(client, []);
+
+            deliver(1, agentText(1));
+            deliver(2, turnEnd(2));
+            await vi.advanceTimersByTimeAsync(10);
+            deliver(3, { role: 'agent', content: { type: 'event', id: 'e3', data: { type: 'ready' } } });
+            const start = Date.now();
+            await vi.advanceTimersByTimeAsync(100);
+
+            expect(metadataWrites().map((m: any) => m.listSummary.to)).toEqual([2, 3]);
+            expect(acks[1] - start).toBeLessThan(100);
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(metadataCalls()).toHaveLength(2);
+        });
+
+        it('writes a failed summary again after 15 s without new rows', async () => {
+            vi.useFakeTimers();
+            acceptMetadataWrites();
+            const hung = hangBoundedWrites();
+            session.metadata = { ...session.metadata, listSummary: summaryOf(0) } as any;
+            const client = new ApiSessionClient('fake-token', session);
+            await fetchRows(client, []);
+
+            deliver(1, turnEnd(1));
+            await vi.advanceTimersByTimeAsync(30_000);
+            expect(hung).toHaveBeenCalledTimes(3);
+            // The server recovers. No new row comes.
+            mockSocket.timeout = vi.fn(() => mockSocket);
+            await vi.advanceTimersByTimeAsync(15_000);
+
+            expect(metadataWrites().map((m: any) => m.listSummary)).toEqual([summaryOf(1)]);
+            await vi.advanceTimersByTimeAsync(600_000);
+            expect(metadataCalls()).toHaveLength(1);
         });
 
         it('observes the rows of a reconnect without routing them', async () => {

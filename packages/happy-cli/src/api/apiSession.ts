@@ -1053,7 +1053,8 @@ export class ApiSessionClient extends EventEmitter {
     /**
      * Writes the pending meaningful time and the list summary in one metadata
      * update. Only one write is in flight. A request during a write stays
-     * pending, and the shared timer sends it after the write ends. A write
+     * pending. After the write ends, a turn boundary goes out at once and
+     * other requests use the shared timer. A write
      * with only the summary has a bounded number of attempts, so it never
      * holds the metadata lock for a long time. The final write at close does
      * not wait for a write in flight.
@@ -1093,21 +1094,39 @@ export class ApiSessionClient extends EventEmitter {
         }, at === null ? ApiSessionClient.SUMMARY_WRITE : undefined);
         return write.then((ok) => {
             this.activityWriteInFlight = false;
-            if (this.pendingMeaningfulAt !== null) {
-                this.armActivityWrite();
-            } else if (this.listSummary.dirty) {
-                this.armActivityWrite(true);
-            }
-            // A failed summary write tries again with the next row, not on a timer.
+            // A failed summary write tries again after 15 s, also when no new row comes.
             if (!ok && summary) {
                 this.listSummary.dirty = true;
             }
+            this.armAfterWrite();
             return ok;
         }, (error) => {
             this.activityWriteInFlight = false;
             logger.debug('[API] Activity metadata write failed', { error });
+            if (summary) {
+                this.listSummary.dirty = true;
+            }
+            this.armAfterWrite();
             return false;
         });
+    }
+
+    /**
+     * Sends the requests that came during a write. A turn boundary goes out at
+     * once, so the `ready` row after a `turn-end` row does not wait 15 s. There
+     * is still only one write in flight.
+     */
+    private armAfterWrite() {
+        if (this.closed) {
+            return;
+        }
+        if (this.listSummary.dirty && this.listSummary.boundary) {
+            queueMicrotask(() => this.writeActivityMetadata());
+        } else if (this.pendingMeaningfulAt !== null) {
+            this.armActivityWrite();
+        } else if (this.listSummary.dirty) {
+            this.armActivityWrite(true);
+        }
     }
 
     /**
