@@ -25,6 +25,7 @@ import {
 } from '@/claude/utils/sessionProtocolMapper';
 import { InvalidateSync } from '@/utils/sync';
 import { isMeaningfulAcpMessage, isMeaningfulEnvelope, nextMeaningfulMessageAt } from './meaningfulActivity';
+import { ListSummaryWriter, sameListSummary } from '@/rayno/listSummaryWriter';
 import axios from 'axios';
 
 /**
@@ -218,6 +219,7 @@ export class ApiSessionClient extends EventEmitter {
     private reconnectInterval: NodeJS.Timeout | null = null;
     private reconnectTimeout: NodeJS.Timeout | null = null;
     private closed = false;
+    private closing = false;
     private ignoreArchiveSignal = false;
     private skipInitialMessages = false;
     private claudeSessionProtocolState: ClaudeSessionProtocolState = {
@@ -248,8 +250,13 @@ export class ApiSessionClient extends EventEmitter {
     private readonly receiveSync: InvalidateSync;
     private reconnectCapabilityHeld = false;
     private pendingMeaningfulAt: number | null = null;
-    private meaningfulWriteTimer: NodeJS.Timeout | null = null;
+    /** The shared timer for `lastMeaningfulMessageAt` and `listSummary` writes. */
+    private activityWriteTimer: NodeJS.Timeout | null = null;
+    /** True when the timer waits for 15 s without new rows, for a write with only the summary. */
+    private activityWriteTimerIdle = false;
+    private activityWriteInFlight = false;
     private lastMeaningfulWriteAt = 0;
+    private readonly listSummary = new ListSummaryWriter((now) => this.scheduleActivityWrite(now));
 
     constructor(token: string, session: Session) {
         super()
@@ -342,6 +349,7 @@ export class ApiSessionClient extends EventEmitter {
                         return;
                     }
                     const body = decrypt(this.encryptionKey, this.encryptionVariant, decodeBase64(data.body.message.content.c));
+                    this.observeRow(data.body.message.id, messageSeq, body);
                     logger.debug('[SOCKET] [UPDATE] Decrypted message', {
                         role: typeof (body as { role?: unknown })?.role === 'string'
                             ? (body as { role: string }).role
@@ -640,16 +648,23 @@ export class ApiSessionClient extends EventEmitter {
                     maxSeq = message.seq;
                 }
 
-                if (skipRouting) continue;
-
                 if (message.content?.t !== 'encrypted') {
+                    this.observeRow(message.id, message.seq, null);
                     continue;
                 }
 
+                // A reconnect does not route old messages, but the list summary still reads them.
+                let body: unknown = null;
                 try {
-                    const body = decrypt(this.encryptionKey, this.encryptionVariant, decodeBase64(message.content.c));
-                    this.routeIncomingMessage(body, message.createdAt);
+                    body = decrypt(this.encryptionKey, this.encryptionVariant, decodeBase64(message.content.c));
+                    this.observeRow(message.id, message.seq, body);
+                    if (!skipRouting && body !== null) {
+                        this.routeIncomingMessage(body, message.createdAt);
+                    }
                 } catch (error) {
+                    if (body === null) {
+                        this.observeRow(message.id, message.seq, null);
+                    }
                     logger.debug('[API] Failed to decrypt fetched message', {
                         sessionId: this.sessionId,
                         seq: message.seq,
@@ -671,6 +686,23 @@ export class ApiSessionClient extends EventEmitter {
             if (!hasMore) {
                 break;
             }
+        }
+        this.listSummary.initialFetchEnded();
+    }
+
+    /**
+     * Gives a received row to the list summary. `body` is null when the row
+     * could not be read. An error here must never stop message routing.
+     */
+    private observeRow(id: string, seq: number, body: unknown | null): void {
+        try {
+            if (body === null) {
+                this.listSummary.lose(seq);
+            } else {
+                this.listSummary.observe({ id, seq, raw: body });
+            }
+        } catch (error) {
+            logger.debug('[API] Failed to observe a row for the list summary', { seq, error });
         }
     }
 
@@ -961,6 +993,8 @@ export class ApiSessionClient extends EventEmitter {
     }
 
     private static readonly MEANINGFUL_WRITE_INTERVAL_MS = 15_000;
+    private static readonly SUMMARY_WRITE = { ackTimeoutMs: 10_000, attempts: 3 };
+    private static readonly FINAL_WRITE_TIMEOUT_MS = 3_000;
 
     /**
      * Publishes `metadata.lastMeaningfulMessageAt`, so that every device shows
@@ -974,47 +1008,175 @@ export class ApiSessionClient extends EventEmitter {
             return;
         }
         this.pendingMeaningfulAt = nextMeaningfulMessageAt(this.pendingMeaningfulAt ?? undefined, at);
-        if (this.meaningfulWriteTimer) {
-            return;
-        }
-        const wait = Math.max(0, this.lastMeaningfulWriteAt + ApiSessionClient.MEANINGFUL_WRITE_INTERVAL_MS - Date.now());
-        this.meaningfulWriteTimer = setTimeout(() => this.writeMeaningfulActivity(), wait);
-        this.meaningfulWriteTimer.unref?.();
+        this.armActivityWrite();
     }
 
-    private writeMeaningfulActivity() {
-        this.meaningfulWriteTimer = null;
-        const at = this.pendingMeaningfulAt;
-        this.pendingMeaningfulAt = null;
-        if (at === null || this.closed) {
+    /**
+     * Called by the list summary. A turn boundary writes at once. The write
+     * waits for a microtask, so the receive cursor includes the row that
+     * asked for it. Other rows use the shared timer: they go out with the
+     * next meaningful write, or after 15 s without new rows.
+     */
+    private scheduleActivityWrite(now: boolean) {
+        if (this.closed) {
             return;
         }
+        if (now) {
+            queueMicrotask(() => this.writeActivityMetadata());
+        } else {
+            this.armActivityWrite(true);
+        }
+    }
+
+    /**
+     * Arms the shared timer. A meaningful write goes out at once, or when the
+     * interval since the last write ends. A write with only the summary (`idle`)
+     * waits 15 s after the newest row, so a turn with rows in short gaps writes
+     * only at its boundary.
+     */
+    private armActivityWrite(idle = false) {
+        // An idle timer moves with each new row. A meaningful timer stays.
+        if (this.closed || (this.activityWriteTimer && !this.activityWriteTimerIdle)) {
+            return;
+        }
+        if (this.activityWriteTimer) {
+            clearTimeout(this.activityWriteTimer);
+        }
+        const wait = idle
+            ? ApiSessionClient.MEANINGFUL_WRITE_INTERVAL_MS
+            : Math.max(0, this.lastMeaningfulWriteAt + ApiSessionClient.MEANINGFUL_WRITE_INTERVAL_MS - Date.now());
+        this.activityWriteTimerIdle = idle;
+        this.activityWriteTimer = setTimeout(() => this.writeActivityMetadata(), wait);
+        this.activityWriteTimer.unref?.();
+    }
+
+    /**
+     * Writes the pending meaningful time and the list summary in one metadata
+     * update. Only one write is in flight. A request during a write stays
+     * pending, and the shared timer sends it after the write ends. A write
+     * with only the summary has a bounded number of attempts, so it never
+     * holds the metadata lock for a long time. The final write at close does
+     * not wait for a write in flight.
+     */
+    private writeActivityMetadata(final = false): Promise<boolean> {
+        if (this.activityWriteTimer) {
+            clearTimeout(this.activityWriteTimer);
+            this.activityWriteTimer = null;
+        }
+        if (this.closed || (this.activityWriteInFlight && !final)) {
+            return Promise.resolve(true);
+        }
+        const at = this.pendingMeaningfulAt;
+        const summary = this.listSummary.take(this.lastReceivedSeq, this.metadata?.listSummary);
+        if (at === null && !summary) {
+            return Promise.resolve(true);
+        }
+        this.pendingMeaningfulAt = null;
         this.lastMeaningfulWriteAt = Date.now();
-        this.updateMetadata((metadata) => {
-            const next = nextMeaningfulMessageAt(metadata.lastMeaningfulMessageAt, at);
-            return next === metadata.lastMeaningfulMessageAt ? metadata : { ...metadata, lastMeaningfulMessageAt: next };
+        this.activityWriteInFlight = true;
+        const write = this.updateMetadata((metadata) => {
+            let next = metadata;
+            if (at !== null) {
+                const time = nextMeaningfulMessageAt(metadata.lastMeaningfulMessageAt, at);
+                if (time !== metadata.lastMeaningfulMessageAt) {
+                    next = { ...next, lastMeaningfulMessageAt: time };
+                }
+            }
+            if (summary) {
+                // A retry can run after more rows arrived, so build the summary again.
+                const current = this.listSummary.summary(this.lastReceivedSeq);
+                if (!sameListSummary(metadata.listSummary, current)) {
+                    next = { ...next, listSummary: current };
+                }
+            }
+            return next;
+        }, at === null ? ApiSessionClient.SUMMARY_WRITE : undefined);
+        return write.then((ok) => {
+            this.activityWriteInFlight = false;
+            if (this.pendingMeaningfulAt !== null) {
+                this.armActivityWrite();
+            } else if (this.listSummary.dirty) {
+                this.armActivityWrite(true);
+            }
+            // A failed summary write tries again with the next row, not on a timer.
+            if (!ok && summary) {
+                this.listSummary.dirty = true;
+            }
+            return ok;
+        }, (error) => {
+            this.activityWriteInFlight = false;
+            logger.debug('[API] Activity metadata write failed', { error });
+            return false;
         });
     }
 
-    updateMetadata(handler: (metadata: Metadata) => Metadata) {
-        this.metadataLock.inLock(async () => {
-            await backoff(async () => {
+    /**
+     * Update session metadata.
+     *
+     * With no options, the write retries until the server accepts it. With
+     * options, each attempt waits at most `ackTimeoutMs` for the ack, and the
+     * write gives up after `attempts` attempts.
+     *
+     * @param handler - Returns the updated metadata. Return the same object to skip the write.
+     * @returns True when the write succeeded or was not needed, false when a bounded write gave up.
+     */
+    updateMetadata(
+        handler: (metadata: Metadata) => Metadata,
+        options?: { ackTimeoutMs: number; attempts: number },
+    ): Promise<boolean> {
+        return this.metadataLock.inLock(async () => {
+            if (options) {
+                return this.updateMetadataBounded(handler, options);
+            }
+            return backoff(async () => {
                 let updated = handler(this.metadata!); // Weird state if metadata is null - should never happen but here we are
+                if (updated === this.metadata) return true;
                 const answer = await this.socket.emitWithAck('update-metadata', { sid: this.sessionId, expectedVersion: this.metadataVersion, metadata: encodeBase64(encrypt(this.encryptionKey, this.encryptionVariant, updated)) });
                 if (answer.result === 'success') {
                     this.metadata = decrypt(this.encryptionKey, this.encryptionVariant, decodeBase64(answer.metadata));
                     this.metadataVersion = answer.version;
                 } else if (answer.result === 'version-mismatch') {
-                    if (answer.version > this.metadataVersion) {
-                        this.metadataVersion = answer.version;
-                        this.metadata = decrypt(this.encryptionKey, this.encryptionVariant, decodeBase64(answer.metadata));
-                    }
+                    this.adoptServerMetadata(answer.version, answer.metadata);
                     throw new Error('Metadata version mismatch');
                 } else if (answer.result === 'error') {
                     // Hard error - ignore
                 }
+                return true;
             });
         });
+    }
+
+    private async updateMetadataBounded(
+        handler: (metadata: Metadata) => Metadata,
+        options: { ackTimeoutMs: number; attempts: number },
+    ): Promise<boolean> {
+        for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
+            const updated = handler(this.metadata!);
+            if (updated === this.metadata) return true;
+            try {
+                const answer = await this.socket.timeout(options.ackTimeoutMs).emitWithAck('update-metadata', { sid: this.sessionId, expectedVersion: this.metadataVersion, metadata: encodeBase64(encrypt(this.encryptionKey, this.encryptionVariant, updated)) });
+                if (answer.result === 'success') {
+                    this.metadata = decrypt(this.encryptionKey, this.encryptionVariant, decodeBase64(answer.metadata));
+                    this.metadataVersion = answer.version;
+                    return true;
+                }
+                if (answer.result === 'version-mismatch') {
+                    this.adoptServerMetadata(answer.version, answer.metadata);
+                    continue;
+                }
+                return false;
+            } catch (error) {
+                logger.debug('[API] Bounded metadata write did not get an ack', { attempt, error });
+            }
+        }
+        return false;
+    }
+
+    private adoptServerMetadata(version: number, metadata: string) {
+        if (version > this.metadataVersion) {
+            this.metadataVersion = version;
+            this.metadata = decrypt(this.encryptionKey, this.encryptionVariant, decodeBase64(metadata));
+        }
     }
 
     /**
@@ -1067,12 +1229,20 @@ export class ApiSessionClient extends EventEmitter {
     }
 
     async close() {
-        if (this.closed) return;
+        if (this.closed || this.closing) return;
+        this.closing = true;
+        // The last list summary goes out before `closed` blocks writes. It waits at most 3 s.
+        if (this.listSummary.dirty) {
+            await Promise.race([
+                this.writeActivityMetadata(true),
+                delay(ApiSessionClient.FINAL_WRITE_TIMEOUT_MS),
+            ]);
+        }
         this.closed = true;
         logger.debug('[API] socket.close() called');
-        if (this.meaningfulWriteTimer) {
-            clearTimeout(this.meaningfulWriteTimer);
-            this.meaningfulWriteTimer = null;
+        if (this.activityWriteTimer) {
+            clearTimeout(this.activityWriteTimer);
+            this.activityWriteTimer = null;
         }
         this.sendSync.stop();
         this.receiveSync.stop();

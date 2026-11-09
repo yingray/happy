@@ -1,0 +1,3880 @@
+{
+  "cases": [
+    {
+      "name": "replies from codex rows",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "9",
+          "seq": 9,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "codex",
+              "data": {
+                "type": "message",
+                "message": "An old reply"
+              }
+            }
+          }
+        },
+        {
+          "id": "11",
+          "seq": 11,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "codex",
+              "data": {
+                "type": "message",
+                "message": "A new reply"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 11,
+        "userSeq": 0,
+        "optionsSeq": 0,
+        "pending": 0
+      }
+    },
+    {
+      "name": "tool activity is no reply and an accepted receipt with an unknown ref is a user turn",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "18",
+          "seq": 18,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "codex",
+              "data": {
+                "type": "message",
+                "message": "An old reply"
+              }
+            }
+          }
+        },
+        {
+          "id": "21",
+          "seq": 21,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "tool-call-start",
+                "name": "Read"
+              }
+            }
+          }
+        },
+        {
+          "id": "22",
+          "seq": 22,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "ev": {
+                "t": "user-message-accepted",
+                "ref": "old"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 18,
+        "userSeq": 22,
+        "optionsSeq": 0,
+        "pending": 0
+      }
+    },
+    {
+      "name": "options stay pending until a user reply and a code example has no options",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "11",
+          "seq": 11,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "codex",
+              "data": {
+                "type": "message",
+                "message": "<options><option>繼續 ✓</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "12",
+          "seq": 12,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "codex",
+              "data": {
+                "type": "message",
+                "message": "More details"
+              }
+            }
+          }
+        },
+        {
+          "id": "13",
+          "seq": 13,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "繼續 ✓"
+            }
+          }
+        },
+        {
+          "id": "14",
+          "seq": 14,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "codex",
+              "data": {
+                "type": "message",
+                "message": "```xml\n<options><option>Example</option></options>\n```"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 14,
+        "userSeq": 13,
+        "optionsSeq": 11,
+        "pending": 0
+      }
+    },
+    {
+      "name": "a hidden recap request is no user turn",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "11",
+          "seq": 11,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "codex",
+              "data": {
+                "type": "message",
+                "message": "<options><option>Continue</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "12",
+          "seq": 12,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "[rayno] Recap your previous reply."
+            },
+            "meta": {
+              "raynoRecap": true,
+              "displayText": "Recap"
+            }
+          }
+        },
+        {
+          "id": "13",
+          "seq": 13,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "codex",
+              "data": {
+                "type": "message",
+                "message": "<rayno-recap>\nAsk to continue.\n</rayno-recap>"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 13,
+        "userSeq": 0,
+        "optionsSeq": 11,
+        "pending": 0
+      }
+    },
+    {
+      "name": "a terminal prompt is a user turn and sidechain rows do not count",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "11",
+          "seq": 11,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "codex",
+              "data": {
+                "type": "message",
+                "message": "<options><option>Continue</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "12",
+          "seq": 12,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "output",
+              "data": {
+                "type": "user",
+                "isSidechain": false,
+                "uuid": "ddf5d729-6843-4230-b696-3f671a2603c7",
+                "message": {
+                  "role": "user",
+                  "content": "Continue"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "13",
+          "seq": 13,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "output",
+              "data": {
+                "type": "user",
+                "isSidechain": true,
+                "parentUuid": null,
+                "uuid": "7e733248-6fc5-4581-b3d3-db3741158fdd",
+                "message": {
+                  "role": "user",
+                  "content": "Search the web for TypeScript 5.6."
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "14",
+          "seq": 14,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "output",
+              "data": {
+                "type": "assistant",
+                "isSidechain": true,
+                "uuid": "317a6037-41ef-4625-8d61-df44e398f533",
+                "message": {
+                  "role": "assistant",
+                  "model": "claude-sonnet-4-20250514",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "<options><option>More</option></options>"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 11,
+        "userSeq": 12,
+        "optionsSeq": 11,
+        "pending": 0
+      }
+    },
+    {
+      "name": "agent events are no reply",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "1",
+          "seq": 1,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "codex",
+              "data": {
+                "type": "message",
+                "message": "A reply\n\n<options><option>Go</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "2",
+          "seq": 2,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "id": "e2",
+              "type": "event",
+              "data": {
+                "type": "switch",
+                "mode": "local"
+              }
+            }
+          }
+        },
+        {
+          "id": "3",
+          "seq": 3,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "id": "e3",
+              "type": "event",
+              "data": {
+                "type": "message",
+                "message": "Aborted by user"
+              }
+            }
+          }
+        },
+        {
+          "id": "4",
+          "seq": 4,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "id": "event-1",
+              "type": "event",
+              "data": {
+                "type": "ready"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 1,
+        "userSeq": 0,
+        "optionsSeq": 1,
+        "pending": 0
+      }
+    },
+    {
+      "name": "a usage limit row is news and quoted limit text is a plain reply",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "1",
+          "seq": 1,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "codex",
+              "data": {
+                "type": "message",
+                "message": "A reply"
+              }
+            }
+          }
+        },
+        {
+          "id": "2",
+          "seq": 2,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "output",
+              "data": {
+                "type": "assistant",
+                "uuid": "u1",
+                "parentUuid": null,
+                "isSidechain": false,
+                "message": {
+                  "role": "assistant",
+                  "model": "claude-opus-5",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Claude AI usage limit reached|1760000000"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "3",
+          "seq": 3,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "Wait"
+            }
+          }
+        },
+        {
+          "id": "4",
+          "seq": 4,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "output",
+              "data": {
+                "type": "assistant",
+                "uuid": "u2",
+                "parentUuid": "u1",
+                "isSidechain": false,
+                "message": {
+                  "role": "assistant",
+                  "model": "claude-opus-5",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "It said: Claude AI usage limit reached|1760000000"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 4,
+        "userSeq": 3,
+        "optionsSeq": 0,
+        "pending": 0
+      }
+    },
+    {
+      "name": "meta prompts and compact summaries are no turn",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "ask",
+          "seq": 1,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "Review it"
+            }
+          }
+        },
+        {
+          "id": "skill",
+          "seq": 2,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "output",
+              "data": {
+                "userType": "external",
+                "cwd": "/demo/project",
+                "sessionId": "789e105f-ae33-486d-9271-0696266f072d",
+                "version": "1.0.56",
+                "gitBranch": "main",
+                "type": "user",
+                "isSidechain": false,
+                "isMeta": true,
+                "uuid": "meta-user-1",
+                "message": {
+                  "role": "user",
+                  "content": "Base directory for this skill: /demo/skills/review\n\n# Review"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "meta",
+          "seq": 3,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "output",
+              "data": {
+                "userType": "external",
+                "cwd": "/demo/project",
+                "sessionId": "789e105f-ae33-486d-9271-0696266f072d",
+                "version": "1.0.56",
+                "gitBranch": "main",
+                "type": "assistant",
+                "isMeta": true,
+                "uuid": "meta-assistant-1",
+                "message": {
+                  "role": "assistant",
+                  "model": "claude-opus-4-20250514",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "<options><option>Hidden</option></options>"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "compact",
+          "seq": 4,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "output",
+              "data": {
+                "type": "assistant",
+                "uuid": "compact-summary-1",
+                "isCompactSummary": true,
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Long compaction summary"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 0,
+        "userSeq": 1,
+        "optionsSeq": 0,
+        "pending": 0
+      }
+    },
+    {
+      "name": "agent envelopes without a turn are dropped",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "user",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "cmh1user000000000000000000",
+              "time": 1000,
+              "role": "user",
+              "ev": {
+                "t": "text",
+                "text": "Hello"
+              }
+            }
+          }
+        },
+        {
+          "id": "stray",
+          "seq": 2,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "cmh1stray00000000000000000",
+              "time": 1000,
+              "role": "agent",
+              "ev": {
+                "t": "text",
+                "text": "Stray <options><option>A</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "usage",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "cmh1usage00000000000000000",
+              "time": 1000,
+              "role": "agent",
+              "usage": {
+                "input_tokens": 1200,
+                "output_tokens": 80
+              },
+              "ev": {
+                "t": "service",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "id": "error",
+          "seq": 4,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "cmh1error00000000000000000",
+              "time": 1000,
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "service",
+                "text": "Error: The agent stopped because of an unknown error."
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 4,
+        "userSeq": 1,
+        "optionsSeq": 0,
+        "pending": 0
+      }
+    },
+    {
+      "name": "a task notification wrapper is no reply text",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "1",
+          "seq": 1,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "Run the build"
+            }
+          }
+        },
+        {
+          "id": "2",
+          "seq": 2,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "text",
+                "text": "<task-notification>\n<task-id>b1</task-id>\n</task-notification>"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 0,
+        "userSeq": 1,
+        "optionsSeq": 0,
+        "pending": 0
+      }
+    },
+    {
+      "name": "file and acp rows",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "1",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "user",
+              "ev": {
+                "t": "file",
+                "name": "a.png",
+                "size": 10,
+                "mimeType": "image/png",
+                "ref": "r1"
+              }
+            }
+          }
+        },
+        {
+          "id": "2",
+          "seq": 2,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "acp",
+              "provider": "gemini",
+              "data": {
+                "type": "message",
+                "message": "Done <options><option>Ok</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "3",
+          "seq": 3,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "acp",
+              "provider": "gemini",
+              "data": {
+                "type": "task_complete",
+                "id": "x"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 2,
+        "userSeq": 1,
+        "optionsSeq": 2,
+        "pending": 0
+      }
+    },
+    {
+      "name": "agentSubagentTurn: options in a main reply that the CLI tags with a finished subagent",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "ask",
+          "seq": 20,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "Ask the agent"
+            }
+          }
+        },
+        {
+          "id": "z0y773gpbimtxekbkw5rl8p1",
+          "seq": 21,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "z0y773gpbimtxekbkw5rl8p1",
+              "time": 1792673719319,
+              "role": "agent",
+              "turn": "p86exz8r6fdr4hwhpf532bqz",
+              "ev": {
+                "t": "turn-start"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "kel5u3ck4bxzr74f23e8mbvq",
+          "seq": 22,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "kel5u3ck4bxzr74f23e8mbvq",
+              "time": 1792673719320,
+              "role": "agent",
+              "turn": "p86exz8r6fdr4hwhpf532bqz",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "toolu_agent",
+                "name": "Agent",
+                "title": "Find config",
+                "description": "Find config",
+                "args": {
+                  "description": "Find config",
+                  "prompt": "Find the config file.",
+                  "subagent_type": "general-purpose",
+                  "sessionSubagent": "c744020fe7d250cca47a5ae1"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "fzxsto026ew7u8rqena4i1u8",
+          "seq": 23,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "fzxsto026ew7u8rqena4i1u8",
+              "time": 1792673719320,
+              "role": "agent",
+              "turn": "p86exz8r6fdr4hwhpf532bqz",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "start",
+                "title": "Find config"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "bfw57r02qzgl93fxmqoty635",
+          "seq": 24,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "bfw57r02qzgl93fxmqoty635",
+              "time": 1792673719320,
+              "role": "agent",
+              "turn": "p86exz8r6fdr4hwhpf532bqz",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "35a3f3c5-dfe2-4128-bcc2-7f69839299f2",
+              "ev": {
+                "t": "text",
+                "text": "Find the config file."
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "f80ngvt0go2mezew383zhdzv",
+          "seq": 25,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "f80ngvt0go2mezew383zhdzv",
+              "time": 1792673719320,
+              "role": "agent",
+              "turn": "p86exz8r6fdr4hwhpf532bqz",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "b6933efa-9a82-4ae5-b81d-d14ac04e648d",
+              "ev": {
+                "t": "text",
+                "text": "child result <options><option>Child</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "kj2dxf6q81qvc4xednoolblh",
+          "seq": 26,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "kj2dxf6q81qvc4xednoolblh",
+              "time": 1792673719320,
+              "role": "agent",
+              "turn": "p86exz8r6fdr4hwhpf532bqz",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "stop"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "i3o6sblfxa74pppswk1zyzw5",
+          "seq": 27,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "i3o6sblfxa74pppswk1zyzw5",
+              "time": 1792673719320,
+              "role": "agent",
+              "turn": "p86exz8r6fdr4hwhpf532bqz",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "toolu_agent"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "k7rarl4ieksm9786xpw6cz7z",
+          "seq": 28,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "k7rarl4ieksm9786xpw6cz7z",
+              "time": 1792673719320,
+              "role": "agent",
+              "turn": "p86exz8r6fdr4hwhpf532bqz",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "8c1f28ed-05bc-493f-917d-d9a0ff527179",
+              "ev": {
+                "t": "text",
+                "text": "TURN1 final answer <options><option>Next</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "qpkup2ib7mswbanscttige10",
+          "seq": 29,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "qpkup2ib7mswbanscttige10",
+              "time": 1792673719321,
+              "role": "agent",
+              "turn": "p86exz8r6fdr4hwhpf532bqz",
+              "ev": {
+                "t": "turn-end",
+                "status": "completed"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "ek8pq2rl9yn5kpsmm4t05djy",
+          "seq": 30,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "ek8pq2rl9yn5kpsmm4t05djy",
+              "time": 1792673719321,
+              "role": "agent",
+              "turn": "oqnwfdhgl64a8e77hggsil44",
+              "ev": {
+                "t": "turn-start"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "v4oppara9g0oshozvafw6vtn",
+          "seq": 31,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "v4oppara9g0oshozvafw6vtn",
+              "time": 1792673719321,
+              "role": "agent",
+              "turn": "oqnwfdhgl64a8e77hggsil44",
+              "claudeUuid": "c2554f79-868d-4b4f-a32d-57a074bffa6e",
+              "ev": {
+                "t": "text",
+                "text": "TURN2 answer"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 31,
+        "userSeq": 20,
+        "optionsSeq": 28,
+        "pending": 0
+      }
+    },
+    {
+      "name": "agentSubagentWork while the subagent runs",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "u8psa994b6tqnoq7e583keob",
+          "seq": 31,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "u8psa994b6tqnoq7e583keob",
+              "time": 1792678304097,
+              "role": "user",
+              "claudeUuid": "0125658f-e007-44f5-ae48-93be1f208de3",
+              "ev": {
+                "t": "text",
+                "text": "Check the config"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "ue5d5lx6p64bb8x47a8a265p",
+          "seq": 32,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "ue5d5lx6p64bb8x47a8a265p",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "turn-start"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "n5scln55s9ka3dzzik29ek7n",
+          "seq": 33,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "n5scln55s9ka3dzzik29ek7n",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "claudeUuid": "9d33d2f8-f139-4942-b9b2-e3d349b6554a",
+              "ev": {
+                "t": "text",
+                "text": "I should delegate the search.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "yi18hboln4irv7dxe20qmo2x",
+          "seq": 34,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "yi18hboln4irv7dxe20qmo2x",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "toolu_agent",
+                "name": "Agent",
+                "title": "Find config",
+                "description": "Find config",
+                "args": {
+                  "description": "Find config",
+                  "prompt": "Find the config file.",
+                  "subagent_type": "general-purpose",
+                  "sessionSubagent": "c744020fe7d250cca47a5ae1"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "e8khwxvvzcb10rk2r41s7elq",
+          "seq": 35,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "e8khwxvvzcb10rk2r41s7elq",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "start",
+                "title": "Find config"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "s5a2kv0yfmcars7zory601dr",
+          "seq": 36,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "s5a2kv0yfmcars7zory601dr",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "6784b475-7d7e-41f0-a1bd-2846e5a6253a",
+              "ev": {
+                "t": "text",
+                "text": "Find the config file."
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "qe9lfumidzgtn6tsshl4xqd3",
+          "seq": 37,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "qe9lfumidzgtn6tsshl4xqd3",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "9527dd14-d103-456d-a7dd-ed59cf85bbac",
+              "ev": {
+                "t": "text",
+                "text": "Look in the root first.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "yiby8co8r09nzokgrdkyjxae",
+          "seq": 38,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "yiby8co8r09nzokgrdkyjxae",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "toolu_glob",
+                "name": "Glob",
+                "title": "Glob call",
+                "description": "Glob call",
+                "args": {
+                  "pattern": "*.json"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "qrtjfarq4menb2dgcc78fczj",
+          "seq": 39,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "qrtjfarq4menb2dgcc78fczj",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "toolu_glob"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "i6ul4usijy82x7vpfikwcrs9",
+          "seq": 40,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "i6ul4usijy82x7vpfikwcrs9",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "72cf9c2c-1928-446c-acc5-0acd553f9e97",
+              "ev": {
+                "t": "text",
+                "text": "Subagent found config.json <options><option>Child option</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 0,
+        "userSeq": 31,
+        "optionsSeq": 0,
+        "pending": 0
+      }
+    },
+    {
+      "name": "agentSubagentWork after the stop",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "u8psa994b6tqnoq7e583keob",
+          "seq": 31,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "u8psa994b6tqnoq7e583keob",
+              "time": 1792678304097,
+              "role": "user",
+              "claudeUuid": "0125658f-e007-44f5-ae48-93be1f208de3",
+              "ev": {
+                "t": "text",
+                "text": "Check the config"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "ue5d5lx6p64bb8x47a8a265p",
+          "seq": 32,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "ue5d5lx6p64bb8x47a8a265p",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "turn-start"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "n5scln55s9ka3dzzik29ek7n",
+          "seq": 33,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "n5scln55s9ka3dzzik29ek7n",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "claudeUuid": "9d33d2f8-f139-4942-b9b2-e3d349b6554a",
+              "ev": {
+                "t": "text",
+                "text": "I should delegate the search.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "yi18hboln4irv7dxe20qmo2x",
+          "seq": 34,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "yi18hboln4irv7dxe20qmo2x",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "toolu_agent",
+                "name": "Agent",
+                "title": "Find config",
+                "description": "Find config",
+                "args": {
+                  "description": "Find config",
+                  "prompt": "Find the config file.",
+                  "subagent_type": "general-purpose",
+                  "sessionSubagent": "c744020fe7d250cca47a5ae1"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "e8khwxvvzcb10rk2r41s7elq",
+          "seq": 35,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "e8khwxvvzcb10rk2r41s7elq",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "start",
+                "title": "Find config"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "s5a2kv0yfmcars7zory601dr",
+          "seq": 36,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "s5a2kv0yfmcars7zory601dr",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "6784b475-7d7e-41f0-a1bd-2846e5a6253a",
+              "ev": {
+                "t": "text",
+                "text": "Find the config file."
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "qe9lfumidzgtn6tsshl4xqd3",
+          "seq": 37,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "qe9lfumidzgtn6tsshl4xqd3",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "9527dd14-d103-456d-a7dd-ed59cf85bbac",
+              "ev": {
+                "t": "text",
+                "text": "Look in the root first.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "yiby8co8r09nzokgrdkyjxae",
+          "seq": 38,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "yiby8co8r09nzokgrdkyjxae",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "toolu_glob",
+                "name": "Glob",
+                "title": "Glob call",
+                "description": "Glob call",
+                "args": {
+                  "pattern": "*.json"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "qrtjfarq4menb2dgcc78fczj",
+          "seq": 39,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "qrtjfarq4menb2dgcc78fczj",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "toolu_glob"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "i6ul4usijy82x7vpfikwcrs9",
+          "seq": 40,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "i6ul4usijy82x7vpfikwcrs9",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "72cf9c2c-1928-446c-acc5-0acd553f9e97",
+              "ev": {
+                "t": "text",
+                "text": "Subagent found config.json <options><option>Child option</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "xko8du0o1o8qgpyvora8hcl6",
+          "seq": 41,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "xko8du0o1o8qgpyvora8hcl6",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "stop"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "zj6cu4v78k6goznfx7ma65gm",
+          "seq": 42,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "zj6cu4v78k6goznfx7ma65gm",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "toolu_agent"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "lxp2w4zfpdhq5htikapux851",
+          "seq": 43,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "lxp2w4zfpdhq5htikapux851",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "d1dfe3b6-82a6-48db-b8b9-93dbaeadeec4",
+              "ev": {
+                "t": "text",
+                "text": "Now answer the user.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "oo58pfss8yqjufqreym38osf",
+          "seq": 44,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "oo58pfss8yqjufqreym38osf",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "d1dfe3b6-82a6-48db-b8b9-93dbaeadeec4",
+              "ev": {
+                "t": "text",
+                "text": "The config is config.json. <options><option>Open it</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "bb1ao9u0d4sfbicxxih3bo9b",
+          "seq": 45,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "bb1ao9u0d4sfbicxxih3bo9b",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "turn-end",
+                "status": "completed"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 44,
+        "userSeq": 31,
+        "optionsSeq": 44,
+        "pending": 0
+      }
+    },
+    {
+      "name": "agentSubagentWork without the stop record, ended by the Agent call",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "u8psa994b6tqnoq7e583keob",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "u8psa994b6tqnoq7e583keob",
+              "time": 1792678304097,
+              "role": "user",
+              "claudeUuid": "0125658f-e007-44f5-ae48-93be1f208de3",
+              "ev": {
+                "t": "text",
+                "text": "Check the config"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "ue5d5lx6p64bb8x47a8a265p",
+          "seq": 2,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "ue5d5lx6p64bb8x47a8a265p",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "turn-start"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "n5scln55s9ka3dzzik29ek7n",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "n5scln55s9ka3dzzik29ek7n",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "claudeUuid": "9d33d2f8-f139-4942-b9b2-e3d349b6554a",
+              "ev": {
+                "t": "text",
+                "text": "I should delegate the search.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "yi18hboln4irv7dxe20qmo2x",
+          "seq": 4,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "yi18hboln4irv7dxe20qmo2x",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "toolu_agent",
+                "name": "Agent",
+                "title": "Find config",
+                "description": "Find config",
+                "args": {
+                  "description": "Find config",
+                  "prompt": "Find the config file.",
+                  "subagent_type": "general-purpose",
+                  "sessionSubagent": "c744020fe7d250cca47a5ae1"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "e8khwxvvzcb10rk2r41s7elq",
+          "seq": 5,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "e8khwxvvzcb10rk2r41s7elq",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "start",
+                "title": "Find config"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "s5a2kv0yfmcars7zory601dr",
+          "seq": 6,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "s5a2kv0yfmcars7zory601dr",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "6784b475-7d7e-41f0-a1bd-2846e5a6253a",
+              "ev": {
+                "t": "text",
+                "text": "Find the config file."
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "qe9lfumidzgtn6tsshl4xqd3",
+          "seq": 7,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "qe9lfumidzgtn6tsshl4xqd3",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "9527dd14-d103-456d-a7dd-ed59cf85bbac",
+              "ev": {
+                "t": "text",
+                "text": "Look in the root first.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "yiby8co8r09nzokgrdkyjxae",
+          "seq": 8,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "yiby8co8r09nzokgrdkyjxae",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "toolu_glob",
+                "name": "Glob",
+                "title": "Glob call",
+                "description": "Glob call",
+                "args": {
+                  "pattern": "*.json"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "qrtjfarq4menb2dgcc78fczj",
+          "seq": 9,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "qrtjfarq4menb2dgcc78fczj",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "toolu_glob"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "i6ul4usijy82x7vpfikwcrs9",
+          "seq": 10,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "i6ul4usijy82x7vpfikwcrs9",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "72cf9c2c-1928-446c-acc5-0acd553f9e97",
+              "ev": {
+                "t": "text",
+                "text": "Subagent found config.json <options><option>Child option</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "zj6cu4v78k6goznfx7ma65gm",
+          "seq": 11,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "zj6cu4v78k6goznfx7ma65gm",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "toolu_agent"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "lxp2w4zfpdhq5htikapux851",
+          "seq": 12,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "lxp2w4zfpdhq5htikapux851",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "d1dfe3b6-82a6-48db-b8b9-93dbaeadeec4",
+              "ev": {
+                "t": "text",
+                "text": "Now answer the user.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "oo58pfss8yqjufqreym38osf",
+          "seq": 13,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "oo58pfss8yqjufqreym38osf",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "d1dfe3b6-82a6-48db-b8b9-93dbaeadeec4",
+              "ev": {
+                "t": "text",
+                "text": "The config is config.json. <options><option>Open it</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "bb1ao9u0d4sfbicxxih3bo9b",
+          "seq": 14,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "bb1ao9u0d4sfbicxxih3bo9b",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "turn-end",
+                "status": "completed"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 13,
+        "userSeq": 1,
+        "optionsSeq": 13,
+        "pending": 0
+      }
+    },
+    {
+      "name": "a subagent row without bounds is pending",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "i6ul4usijy82x7vpfikwcrs9",
+          "seq": 10,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "i6ul4usijy82x7vpfikwcrs9",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "72cf9c2c-1928-446c-acc5-0acd553f9e97",
+              "ev": {
+                "t": "text",
+                "text": "Subagent found config.json <options><option>Child option</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 0,
+        "userSeq": 0,
+        "optionsSeq": 0,
+        "pending": 1
+      }
+    },
+    {
+      "name": "taskSubagentTurn",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "l4n9pmtuhmq0hlh6voue0fwz",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "l4n9pmtuhmq0hlh6voue0fwz",
+              "time": 1792678304398,
+              "role": "user",
+              "claudeUuid": "0f8df2a0-ae6f-4394-b0b3-55004bfc7909",
+              "ev": {
+                "t": "text",
+                "text": "Search the docs"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "r7e24ws2sx2w4bk8shgawx1r",
+          "seq": 2,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "r7e24ws2sx2w4bk8shgawx1r",
+              "time": 1792678304399,
+              "role": "agent",
+              "turn": "mc4avpsb49ml9tvk1cy3czd0",
+              "ev": {
+                "t": "turn-start"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "ldfbdpfrdbxmms4uixdvat2d",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "ldfbdpfrdbxmms4uixdvat2d",
+              "time": 1792678304399,
+              "role": "agent",
+              "turn": "mc4avpsb49ml9tvk1cy3czd0",
+              "subagent": "c16ff91b64624559a2d94eca",
+              "ev": {
+                "t": "start",
+                "title": "Search docs"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "bebiptb8l5k2nyjdvwiyrn10",
+          "seq": 4,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "bebiptb8l5k2nyjdvwiyrn10",
+              "time": 1792678304400,
+              "role": "agent",
+              "turn": "mc4avpsb49ml9tvk1cy3czd0",
+              "subagent": "c16ff91b64624559a2d94eca",
+              "claudeUuid": "bb45330e-7582-41ea-b1f3-2c1e4bae72a2",
+              "ev": {
+                "t": "text",
+                "text": "Search the docs for TypeScript 5.6."
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "tv2wuc1obbksgzek1cocv605",
+          "seq": 5,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "tv2wuc1obbksgzek1cocv605",
+              "time": 1792678304400,
+              "role": "agent",
+              "turn": "mc4avpsb49ml9tvk1cy3czd0",
+              "subagent": "c16ff91b64624559a2d94eca",
+              "claudeUuid": "a6dbdf8b-24a4-443a-87d7-573debaaafe1",
+              "ev": {
+                "t": "text",
+                "text": "TypeScript 5.6 adds iterator helpers. <options><option>Task option</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "i6r9b3f6yh4ldgxz39hp87zm",
+          "seq": 6,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "i6r9b3f6yh4ldgxz39hp87zm",
+              "time": 1792678304400,
+              "role": "agent",
+              "turn": "mc4avpsb49ml9tvk1cy3czd0",
+              "subagent": "c16ff91b64624559a2d94eca",
+              "ev": {
+                "t": "stop"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "k8x18tlmvevg13fz3y2iqe9y",
+          "seq": 7,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "k8x18tlmvevg13fz3y2iqe9y",
+              "time": 1792678304400,
+              "role": "agent",
+              "turn": "mc4avpsb49ml9tvk1cy3czd0",
+              "subagent": "c16ff91b64624559a2d94eca",
+              "claudeUuid": "293a7fe4-6000-4da4-8950-fd716f97ebf9",
+              "ev": {
+                "t": "text",
+                "text": "TypeScript 5.6 adds iterator helpers."
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "f0masddytw8qx16fbe0i462q",
+          "seq": 8,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "f0masddytw8qx16fbe0i462q",
+              "time": 1792678304400,
+              "role": "agent",
+              "turn": "mc4avpsb49ml9tvk1cy3czd0",
+              "ev": {
+                "t": "turn-end",
+                "status": "completed"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 7,
+        "userSeq": 1,
+        "optionsSeq": 0,
+        "pending": 0
+      }
+    },
+    {
+      "name": "codexCollabTurn",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "je5a2yo8papqa8895d6xndlc",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "je5a2yo8papqa8895d6xndlc",
+              "time": 1792680000000,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "ev": {
+                "t": "turn-start"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "cgynlih543cfxoph22o8oj9e",
+          "seq": 2,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "cgynlih543cfxoph22o8oj9e",
+              "time": 1792680000001,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "ev": {
+                "t": "text",
+                "text": "Delegate the auth review.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "djle1fqoj0ui9lbc3y76ohz4",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "djle1fqoj0ui9lbc3y76ohz4",
+              "time": 1792680000002,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "call_spawn",
+                "name": "CodexSubagent",
+                "title": "Inspect auth flow",
+                "description": "Spawn Codex subagent: Inspect auth flow",
+                "args": {
+                  "tool": "spawnAgent",
+                  "status": "inProgress",
+                  "prompt": "Inspect auth flow",
+                  "model": "gpt-5-codex",
+                  "reasoningEffort": null,
+                  "agentStates": [],
+                  "sessionSubagent": "cbfcb7f63ea32640670a9569",
+                  "sessionSubagents": [
+                    "cbfcb7f63ea32640670a9569"
+                  ]
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "ozcwhv16auv08kkvklfopiyq",
+          "seq": 4,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "ozcwhv16auv08kkvklfopiyq",
+              "time": 1792680000003,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "subagent": "cbfcb7f63ea32640670a9569",
+              "ev": {
+                "t": "start",
+                "title": "Inspect auth flow"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "twbimi5wtqzw6vimr2dvln19",
+          "seq": 5,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "twbimi5wtqzw6vimr2dvln19",
+              "time": 1792680000004,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "call_spawn"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "xcy3nfglpld7i6bxfjgneocn",
+          "seq": 6,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "xcy3nfglpld7i6bxfjgneocn",
+              "time": 1792680000005,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "subagent": "cbfcb7f63ea32640670a9569",
+              "ev": {
+                "t": "text",
+                "text": "Read the login handler.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "bjo8nglgaoaxzluzdxkn4o9r",
+          "seq": 7,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "bjo8nglgaoaxzluzdxkn4o9r",
+              "time": 1792680000006,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "subagent": "cbfcb7f63ea32640670a9569",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "call_rg",
+                "name": "CodexBash",
+                "title": "Run `rg login`",
+                "description": "rg login",
+                "args": {
+                  "command": [
+                    "rg",
+                    "login"
+                  ],
+                  "agent_thread_id": "child-thread"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "e9lfr29jef5pjs75xvuqvj1i",
+          "seq": 8,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "e9lfr29jef5pjs75xvuqvj1i",
+              "time": 1792680000007,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "subagent": "cbfcb7f63ea32640670a9569",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "call_rg"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "go0gc4935v9y1wu2qp7o9fnd",
+          "seq": 9,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "go0gc4935v9y1wu2qp7o9fnd",
+              "time": 1792680000008,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "subagent": "cbfcb7f63ea32640670a9569",
+              "ev": {
+                "t": "text",
+                "text": "Found the auth handler. <options><option>Child option</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "maji7vrk1xmpgxoe8p001mgy",
+          "seq": 10,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "maji7vrk1xmpgxoe8p001mgy",
+              "time": 1792680000009,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "call_wait",
+                "name": "CodexSubagent",
+                "title": "Wait for Codex subagent",
+                "description": "Wait for Codex subagent",
+                "args": {
+                  "tool": "wait",
+                  "status": "inProgress",
+                  "prompt": null,
+                  "model": null,
+                  "reasoningEffort": null,
+                  "agentStates": [],
+                  "sessionSubagent": "cbfcb7f63ea32640670a9569",
+                  "sessionSubagents": [
+                    "cbfcb7f63ea32640670a9569"
+                  ]
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "x4ohiyrnk6w51s4bixjobjbc",
+          "seq": 11,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "x4ohiyrnk6w51s4bixjobjbc",
+              "time": 1792680000010,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "subagent": "cbfcb7f63ea32640670a9569",
+              "ev": {
+                "t": "service",
+                "text": "Codex subagent completed: found auth handler"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "q1hswzb5470nr5dudq2vae2t",
+          "seq": 12,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "q1hswzb5470nr5dudq2vae2t",
+              "time": 1792680000011,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "call_wait"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "aa4rpenhqfsvi5rwv597otjm",
+          "seq": 13,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "aa4rpenhqfsvi5rwv597otjm",
+              "time": 1792680000012,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "ev": {
+                "t": "text",
+                "text": "The auth handler is in src/auth.ts. <options><option>Open it</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "ern49e7eufi9zmwp9p55utu7",
+          "seq": 14,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "ern49e7eufi9zmwp9p55utu7",
+              "time": 1792680000013,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "subagent": "cbfcb7f63ea32640670a9569",
+              "ev": {
+                "t": "stop"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "e6wtznkpbo2kcow3knl27fmd",
+          "seq": 15,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "e6wtznkpbo2kcow3knl27fmd",
+              "time": 1792680000014,
+              "role": "agent",
+              "turn": "lo0gh9flrv8ow6ccukjz7goe",
+              "ev": {
+                "t": "turn-end",
+                "status": "completed"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 13,
+        "userSeq": 0,
+        "optionsSeq": 13,
+        "pending": 0
+      }
+    },
+    {
+      "name": "codexReasoningSection",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "ask",
+          "seq": 1,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "Fix the parser"
+            }
+          }
+        },
+        {
+          "id": "ujcm6vbn0kkcrvx3zvpinccs",
+          "seq": 2,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "ujcm6vbn0kkcrvx3zvpinccs",
+              "time": 1792680000015,
+              "role": "agent",
+              "turn": "wq4f0b7mzk2c9h1x8r3t5yde",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "reason-1",
+                "name": "CodexReasoning",
+                "title": "Planning the fix",
+                "description": "Planning the fix",
+                "args": {
+                  "title": "Planning the fix"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "ss03t1btzvztuoecd6yhafo7",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "ss03t1btzvztuoecd6yhafo7",
+              "time": 1792680000016,
+              "role": "agent",
+              "turn": "wq4f0b7mzk2c9h1x8r3t5yde",
+              "ev": {
+                "t": "text",
+                "text": "Check the parser first.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "swmmpcq2i0auosrvepbfehgl",
+          "seq": 4,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "swmmpcq2i0auosrvepbfehgl",
+              "time": 1792680000017,
+              "role": "agent",
+              "turn": "wq4f0b7mzk2c9h1x8r3t5yde",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "reason-1"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 0,
+        "userSeq": 1,
+        "optionsSeq": 0,
+        "pending": 0
+      }
+    },
+    {
+      "name": "taggedMainReads before the main answer",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "u8psa994b6tqnoq7e583keob",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "u8psa994b6tqnoq7e583keob",
+              "time": 1792678304097,
+              "role": "user",
+              "claudeUuid": "0125658f-e007-44f5-ae48-93be1f208de3",
+              "ev": {
+                "t": "text",
+                "text": "Check the config"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "ue5d5lx6p64bb8x47a8a265p",
+          "seq": 2,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "ue5d5lx6p64bb8x47a8a265p",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "turn-start"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "n5scln55s9ka3dzzik29ek7n",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "n5scln55s9ka3dzzik29ek7n",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "claudeUuid": "9d33d2f8-f139-4942-b9b2-e3d349b6554a",
+              "ev": {
+                "t": "text",
+                "text": "I should delegate the search.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "yi18hboln4irv7dxe20qmo2x",
+          "seq": 4,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "yi18hboln4irv7dxe20qmo2x",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "toolu_agent",
+                "name": "Agent",
+                "title": "Find config",
+                "description": "Find config",
+                "args": {
+                  "description": "Find config",
+                  "prompt": "Find the config file.",
+                  "subagent_type": "general-purpose",
+                  "sessionSubagent": "c744020fe7d250cca47a5ae1"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "e8khwxvvzcb10rk2r41s7elq",
+          "seq": 5,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "e8khwxvvzcb10rk2r41s7elq",
+              "time": 1792678304098,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "start",
+                "title": "Find config"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "s5a2kv0yfmcars7zory601dr",
+          "seq": 6,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "s5a2kv0yfmcars7zory601dr",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "6784b475-7d7e-41f0-a1bd-2846e5a6253a",
+              "ev": {
+                "t": "text",
+                "text": "Find the config file."
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "qe9lfumidzgtn6tsshl4xqd3",
+          "seq": 7,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "qe9lfumidzgtn6tsshl4xqd3",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "9527dd14-d103-456d-a7dd-ed59cf85bbac",
+              "ev": {
+                "t": "text",
+                "text": "Look in the root first.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "yiby8co8r09nzokgrdkyjxae",
+          "seq": 8,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "yiby8co8r09nzokgrdkyjxae",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "toolu_glob",
+                "name": "Glob",
+                "title": "Glob call",
+                "description": "Glob call",
+                "args": {
+                  "pattern": "*.json"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "qrtjfarq4menb2dgcc78fczj",
+          "seq": 9,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "qrtjfarq4menb2dgcc78fczj",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "toolu_glob"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "i6ul4usijy82x7vpfikwcrs9",
+          "seq": 10,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "i6ul4usijy82x7vpfikwcrs9",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "72cf9c2c-1928-446c-acc5-0acd553f9e97",
+              "ev": {
+                "t": "text",
+                "text": "Subagent found config.json <options><option>Child option</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "xko8du0o1o8qgpyvora8hcl6",
+          "seq": 11,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "xko8du0o1o8qgpyvora8hcl6",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "stop"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "zj6cu4v78k6goznfx7ma65gm",
+          "seq": 12,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "zj6cu4v78k6goznfx7ma65gm",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "toolu_agent"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "lxp2w4zfpdhq5htikapux851",
+          "seq": 13,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "lxp2w4zfpdhq5htikapux851",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "d1dfe3b6-82a6-48db-b8b9-93dbaeadeec4",
+              "ev": {
+                "t": "text",
+                "text": "Now answer the user.",
+                "thinking": true
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "mainreads000000000000000",
+          "seq": 14,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "mainreads000000000000000",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "toolu_read_0",
+                "name": "Read",
+                "title": "Read call",
+                "description": "Read call",
+                "args": {
+                  "file_path": "config.json"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "mainreade000000000000000",
+          "seq": 15,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "mainreade000000000000000",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "toolu_read_0"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "mainreads000000000000001",
+          "seq": 16,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "mainreads000000000000001",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "toolu_read_1",
+                "name": "Read",
+                "title": "Read call",
+                "description": "Read call",
+                "args": {
+                  "file_path": "config.json"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "mainreade000000000000001",
+          "seq": 17,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "mainreade000000000000001",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "toolu_read_1"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "oo58pfss8yqjufqreym38osf",
+          "seq": 18,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "oo58pfss8yqjufqreym38osf",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "claudeUuid": "d1dfe3b6-82a6-48db-b8b9-93dbaeadeec4",
+              "ev": {
+                "t": "text",
+                "text": "The config is config.json. <options><option>Open it</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "bb1ao9u0d4sfbicxxih3bo9b",
+          "seq": 19,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "bb1ao9u0d4sfbicxxih3bo9b",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "turn-end",
+                "status": "completed"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 18,
+        "userSeq": 1,
+        "optionsSeq": 18,
+        "pending": 0
+      }
+    },
+    {
+      "name": "a legacy sidechain child with an explicit parent tool id",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "ask",
+          "seq": 1,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "Find a file"
+            }
+          }
+        },
+        {
+          "id": "parent",
+          "seq": 2,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "output",
+              "data": {
+                "type": "assistant",
+                "message": {
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "task",
+                      "name": "Agent",
+                      "input": {
+                        "prompt": "Find a file"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "child",
+          "seq": 3,
+          "raw": {
+            "role": "agent",
+            "content": {
+              "type": "output",
+              "data": {
+                "type": "assistant",
+                "isSidechain": true,
+                "parent_tool_use_id": "task",
+                "uuid": "child-id",
+                "message": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "The file is config.json. <options><option>Open</option></options>"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 0,
+        "userSeq": 1,
+        "optionsSeq": 0,
+        "pending": 0
+      }
+    },
+    {
+      "name": "receipts: a queued message accepted after the options",
+      "receipts": true,
+      "rows": [
+        {
+          "id": "working",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "text",
+                "text": "Working"
+              }
+            }
+          }
+        },
+        {
+          "id": "steer",
+          "seq": 2,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "Steer"
+            },
+            "meta": {
+              "sentFrom": "web",
+              "expectsAcceptance": true,
+              "queuedWhileBusy": true
+            }
+          }
+        },
+        {
+          "id": "options",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "text",
+                "text": "Pick one\n<options><option>A</option><option>B</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "server-receipt-4",
+          "seq": 4,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "accepted:steer",
+              "time": 4000,
+              "role": "agent",
+              "ev": {
+                "t": "user-message-accepted",
+                "id": "msg-4",
+                "ref": "steer",
+                "runId": "run-1"
+              }
+            },
+            "meta": {
+              "sentFrom": "rig"
+            }
+          }
+        },
+        {
+          "id": "done",
+          "seq": 5,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "text",
+                "text": "Steered"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 5,
+        "userSeq": 4,
+        "optionsSeq": 3,
+        "pending": 0
+      }
+    },
+    {
+      "name": "receipts: a queued message before its receipt",
+      "receipts": true,
+      "rows": [
+        {
+          "id": "working",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "text",
+                "text": "Working"
+              }
+            }
+          }
+        },
+        {
+          "id": "steer",
+          "seq": 2,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "Steer"
+            },
+            "meta": {
+              "sentFrom": "web",
+              "expectsAcceptance": true,
+              "queuedWhileBusy": true
+            }
+          }
+        },
+        {
+          "id": "options",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "text",
+                "text": "Pick one\n<options><option>A</option><option>B</option></options>"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 3,
+        "userSeq": 0,
+        "optionsSeq": 3,
+        "pending": 0
+      }
+    },
+    {
+      "name": "receipts: a rejected answer keeps the options open",
+      "receipts": true,
+      "rows": [
+        {
+          "id": "options",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "text",
+                "text": "Pick one\n<options><option>A</option><option>B</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "answer",
+          "seq": 2,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "A"
+            },
+            "meta": {
+              "sentFrom": "web",
+              "expectsAcceptance": true,
+              "queuedWhileBusy": false
+            }
+          }
+        },
+        {
+          "id": "relay-refusal-3",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "refused:answer",
+              "time": 3000,
+              "role": "agent",
+              "ev": {
+                "t": "user-message-rejected",
+                "ref": "answer",
+                "reason": "That model is not available."
+              }
+            },
+            "meta": {
+              "sentFrom": "rig"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 1,
+        "userSeq": 0,
+        "optionsSeq": 1,
+        "pending": 0
+      }
+    },
+    {
+      "name": "receipts: an accepted recap request does not answer options",
+      "receipts": true,
+      "rows": [
+        {
+          "id": "options",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "text",
+                "text": "Pick one\n<options><option>A</option><option>B</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "recap",
+          "seq": 2,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "[rayno] Recap your previous reply."
+            },
+            "meta": {
+              "sentFrom": "web",
+              "raynoRecap": true,
+              "displayText": "Recap",
+              "expectsAcceptance": true,
+              "queuedWhileBusy": false
+            }
+          }
+        },
+        {
+          "id": "server-receipt-3",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "accepted:recap",
+              "time": 4000,
+              "role": "agent",
+              "ev": {
+                "t": "user-message-accepted",
+                "id": "msg-3",
+                "ref": "recap",
+                "runId": "run-1"
+              }
+            },
+            "meta": {
+              "sentFrom": "rig"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 1,
+        "userSeq": 0,
+        "optionsSeq": 1,
+        "pending": 0
+      }
+    },
+    {
+      "name": "receipts: a plain send waits for its receipt",
+      "receipts": true,
+      "rows": [
+        {
+          "id": "options",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "text",
+                "text": "Pick one\n<options><option>A</option><option>B</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "answer",
+          "seq": 2,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "A"
+            },
+            "meta": {
+              "sentFrom": "web",
+              "expectsAcceptance": true,
+              "queuedWhileBusy": false
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 1,
+        "userSeq": 0,
+        "optionsSeq": 1,
+        "pending": 0
+      }
+    },
+    {
+      "name": "no receipts: a plain send counts at once",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "options",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "text",
+                "text": "Pick one\n<options><option>A</option><option>B</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "answer",
+          "seq": 2,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "A"
+            },
+            "meta": {
+              "sentFrom": "web",
+              "expectsAcceptance": true,
+              "queuedWhileBusy": false
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 1,
+        "userSeq": 2,
+        "optionsSeq": 1,
+        "pending": 0
+      }
+    },
+    {
+      "name": "receipts: a receipt before its message",
+      "receipts": true,
+      "rows": [
+        {
+          "id": "relay-refusal-1",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "refused:late",
+              "time": 3000,
+              "role": "agent",
+              "ev": {
+                "t": "user-message-rejected",
+                "ref": "late",
+                "reason": "That model is not available."
+              }
+            },
+            "meta": {
+              "sentFrom": "rig"
+            }
+          }
+        },
+        {
+          "id": "options",
+          "seq": 2,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "text",
+                "text": "Pick one\n<options><option>A</option><option>B</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "server-receipt-3",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "accepted:answer",
+              "time": 4000,
+              "role": "agent",
+              "ev": {
+                "t": "user-message-accepted",
+                "id": "msg-3",
+                "ref": "answer",
+                "runId": "run-1"
+              }
+            },
+            "meta": {
+              "sentFrom": "rig"
+            }
+          }
+        },
+        {
+          "id": "answer",
+          "seq": 4,
+          "raw": {
+            "role": "user",
+            "content": {
+              "type": "text",
+              "text": "A"
+            },
+            "meta": {
+              "sentFrom": "web",
+              "expectsAcceptance": true,
+              "queuedWhileBusy": false
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 2,
+        "userSeq": 3,
+        "optionsSeq": 2,
+        "pending": 0
+      }
+    },
+    {
+      "name": "scrambled emission: the newest batch gets the lower seqs",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "answer",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "text",
+                "text": "Here is the plan. <options><option>Go</option></options>"
+              }
+            }
+          }
+        },
+        {
+          "id": "end",
+          "seq": 2,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "turn-end",
+                "status": "completed"
+              }
+            }
+          }
+        },
+        {
+          "id": "prompt",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "user",
+              "ev": {
+                "t": "text",
+                "text": "Plan the change"
+              }
+            }
+          }
+        },
+        {
+          "id": "start",
+          "seq": 4,
+          "raw": {
+            "role": "session",
+            "content": {
+              "role": "agent",
+              "turn": "t1",
+              "ev": {
+                "t": "turn-start"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 1,
+        "userSeq": 3,
+        "optionsSeq": 1,
+        "pending": 0
+      }
+    },
+    {
+      "name": "d4: a tagged user row after an Agent call end that a later scan reads",
+      "receipts": false,
+      "rows": [
+        {
+          "id": "ask",
+          "seq": 1,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "ask",
+              "time": 1,
+              "role": "user",
+              "ev": {
+                "t": "text",
+                "text": "Check the config"
+              }
+            }
+          }
+        },
+        {
+          "id": "call",
+          "seq": 2,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "call",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "tool-call-start",
+                "call": "toolu_agent",
+                "name": "Agent",
+                "title": "Find config",
+                "args": {
+                  "prompt": "Find the config file.",
+                  "sessionSubagent": "c744020fe7d250cca47a5ae1"
+                }
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "start",
+          "seq": 3,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "start",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "start",
+                "title": "Find config"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "child",
+          "seq": 4,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "child",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "text",
+                "text": "child work"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "end",
+          "seq": 5,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "end",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "tool-call-end",
+                "call": "toolu_agent"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "options",
+          "seq": 6,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "options",
+              "time": 1792678304099,
+              "role": "agent",
+              "turn": "w3cn3ht73qf295i3adyacvvq",
+              "ev": {
+                "t": "text",
+                "text": "Pick one <options><option>A</option></options>"
+              }
+            },
+            "meta": {
+              "sentFrom": "cli"
+            }
+          }
+        },
+        {
+          "id": "typed",
+          "seq": 7,
+          "raw": {
+            "role": "session",
+            "content": {
+              "id": "typed",
+              "time": 7,
+              "role": "user",
+              "subagent": "c744020fe7d250cca47a5ae1",
+              "ev": {
+                "t": "text",
+                "text": "A"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "assistantSeq": 6,
+        "userSeq": 7,
+        "optionsSeq": 6,
+        "pending": 0
+      },
+      "local": {
+        "scans": [
+          [
+            1,
+            4
+          ],
+          [
+            5,
+            7
+          ]
+        ],
+        "expect": {
+          "assistantSeq": 6,
+          "userSeq": 1,
+          "optionsSeq": 6
+        }
+      }
+    }
+  ],
+  "options": [
+    {
+      "content": "<options> <option>已按下全部 7 個 ✓</option> <option>我找不到 ✓ 按鈕</option> </options>",
+      "expect": true
+    },
+    {
+      "content": "<options>\n  <option>已按下全部 7 個 ✓</option>\n  <option>我找不到 ✓ 按鈕</option>\n</options>",
+      "expect": true
+    },
+    {
+      "content": "```xml\n<options><option>Example</option></options>\n```",
+      "expect": false
+    },
+    {
+      "content": "`<options><option>Example</option></options>`",
+      "expect": false
+    },
+    {
+      "content": "    <options><option>Example</option></options>",
+      "expect": false
+    },
+    {
+      "content": "> <options><option>Example</option></options>",
+      "expect": false
+    },
+    {
+      "content": "<options><option>Unfinished",
+      "expect": false
+    },
+    {
+      "content": "<options><option> </option></options>",
+      "expect": false
+    },
+    {
+      "content": "<options>Unexpected text<option>Choice</option></options>",
+      "expect": false
+    },
+    {
+      "content": "# Question\n\n```xml\n<options><option>Example</option></options>\n```\n\n<options><option>Continue</option></options>\n\nMore **details**.",
+      "expect": true
+    },
+    {
+      "content": "The reply uses `<options>` for choices.\n\n<options>\n<option>A</option>\n</options>",
+      "expect": true
+    },
+    {
+      "content": "| Position | At the end, before `<options>` |\n\n<options>\n<option>A</option>\n</options>",
+      "expect": true
+    },
+    {
+      "content": "```xml\n<options>\n```\n\n<options>\n<option>A</option>\n</options>",
+      "expect": true
+    },
+    {
+      "content": "    <options>\n\n<options>\n<option>A</option>\n</options>",
+      "expect": true
+    },
+    {
+      "content": "> <options>\n\n<options>\n<option>A</option>\n</options>",
+      "expect": true
+    },
+    {
+      "content": "> Quote\n<options><option>A</option></options>",
+      "expect": false
+    },
+    {
+      "content": "> Quote\n<b>\n<options><option>A</option></options>",
+      "expect": true
+    },
+    {
+      "content": "- item\n\n      <options><option>A</option></options>",
+      "expect": false
+    },
+    {
+      "content": "- item\n\n    <options><option>A</option></options>",
+      "expect": true
+    },
+    {
+      "content": "~~~\n<options><option>A</option></options>",
+      "expect": false
+    },
+    {
+      "content": "````\n```\n<options><option>A</option></options>\n````\n<options><option>B</option></options>",
+      "expect": true
+    },
+    {
+      "content": "    code\n2. <options><option>A</option></options>",
+      "expect": true
+    },
+    {
+      "content": "\\`<options><option>A</option></options>`",
+      "expect": true
+    },
+    {
+      "content": "``<options><option>A</option></options>`",
+      "expect": true
+    },
+    {
+      "content": "中文說明\r\n\r\n<options>\r\n<option>是</option>\r\n<option>否</option>\r\n</options>",
+      "expect": true
+    }
+  ]
+}

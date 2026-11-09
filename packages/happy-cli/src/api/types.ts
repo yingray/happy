@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { Update, UpdateMachineBody } from '@slopus/happy-wire';
 import { UsageSchema } from '@/claude/types'
 import type { SandboxConfig } from '@/persistence'
+import type { ListSummary } from '@/rayno/listSummaryWriter'
 
 export {
   SessionMessageContentSchema,
@@ -318,6 +319,11 @@ export type Metadata = {
    * list by it. ApiSessionClient writes it.
    */
   lastMeaningfulMessageAt?: number,
+  /**
+   * The attention counters of the whole message log, for the Rayno session
+   * list. ApiSessionClient writes it. See src/rayno/listSummaryWriter.ts.
+   */
+  listSummary?: ListSummary,
   machineId?: string,
   gitBranch?: string,
   claudeSessionId?: string, // Claude Code session ID

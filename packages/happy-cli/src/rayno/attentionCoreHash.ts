@@ -1,0 +1,1 @@
+export const ATTENTION_CORE_HASH = '1e2523989425';

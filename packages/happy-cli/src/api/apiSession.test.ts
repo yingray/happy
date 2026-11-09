@@ -3,6 +3,8 @@ import { ApiSessionClient } from './apiSession';
 import { decodeBase64, decrypt, decryptBlob, encodeBase64, encrypt } from './encryption';
 import type { Update } from './types';
 import { logger } from '@/ui/logger';
+import { ATTENTION_CORE_HASH } from '@/rayno/attentionCoreHash';
+import type { ListSummary } from '@/rayno/listSummaryWriter';
 
 const {
     mockIo,
@@ -177,6 +179,7 @@ describe('ApiSessionClient v3 messages API migration', () => {
             },
             close: vi.fn()
         };
+        mockSocket.timeout = vi.fn(() => mockSocket);
 
         mockIo.mockReturnValue(mockSocket);
     });
@@ -900,6 +903,367 @@ describe('ApiSessionClient v3 messages API migration', () => {
                 expect(metadataWrites()).toHaveLength(1);
             });
             expect(metadataWrites()[0].lastMeaningfulMessageAt).toBe(7000);
+        });
+    });
+
+    describe('listSummary', () => {
+        const metadataCalls = () => mockSocket.emitWithAck.mock.calls
+            .filter(([event]: [string]) => event === 'update-metadata');
+        const metadataWrites = () => metadataCalls()
+            .map(([, payload]: [string, any]) => decrypt(session.encryptionKey, session.encryptionVariant, decodeBase64(payload.metadata)));
+
+        const acceptMetadataWrites = () => {
+            let version = 0;
+            mockSocket.emitWithAck.mockImplementation(async (event: string, payload: any) => {
+                if (event !== 'update-metadata') return { result: 'error' };
+                version += 1;
+                return { result: 'success', version, metadata: payload.metadata };
+            });
+        };
+
+        const summaryOf = (to: number, counters: Partial<ListSummary> = {}): ListSummary => ({
+            v: 1, core: ATTENTION_CORE_HASH, to, complete: true, pending: 0, receipts: false,
+            assistantSeq: 0, userSeq: 0, optionsSeq: 0, ...counters,
+        });
+
+        const agentText = (seq: number, text = `reply ${seq}`) => ({
+            role: 'session',
+            content: { id: `e${seq}`, time: seq, role: 'agent', turn: 't1', ev: { t: 'text', text } },
+            meta: { sentFrom: 'cli' },
+        });
+        const turnEnd = (seq: number) => ({
+            role: 'session',
+            content: { id: `e${seq}`, time: seq, role: 'agent', turn: 't1', ev: { t: 'turn-end', status: 'completed' } },
+            meta: { sentFrom: 'cli' },
+        });
+        const userText = (text: string) => ({ role: 'user', content: { type: 'text', text } });
+
+        const fetchedRow = (seq: number, raw: unknown) => ({
+            id: `msg-${seq}`, seq, localId: null, createdAt: seq, updatedAt: seq,
+            content: { t: 'encrypted', c: encryptContent(session, raw) },
+        });
+        const fetchRows = async (client: ApiSessionClient, messages: unknown[]) => {
+            mockAxiosGet.mockResolvedValueOnce({ data: { messages, hasMore: false } });
+            await (client as any).fetchMessages();
+        };
+        const deliver = (seq: number, raw: unknown) => {
+            emitSocketEvent('update', createNewMessageUpdate(seq, encryptContent(session, raw)));
+        };
+
+        // A bounded write whose ack never comes. The socket rejects it when the timeout ends.
+        const hangBoundedWrites = () => {
+            const hung = vi.fn((_event: string, _payload: unknown) => new Promise(() => undefined));
+            mockSocket.timeout = vi.fn((ms: number) => ({
+                emitWithAck: (event: string, payload: unknown) => Promise.race([
+                    hung(event, payload),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('operation has timed out')), ms)),
+                ]),
+            }));
+            return hung;
+        };
+
+        afterEach(() => {
+            vi.unstubAllEnvs();
+        });
+
+        it('writes once for a 10-row turn with 3 s gaps that ends with turn-end', async () => {
+            vi.useFakeTimers();
+            acceptMetadataWrites();
+            session.metadata = { ...session.metadata, listSummary: summaryOf(0) } as any;
+            const client = new ApiSessionClient('fake-token', session);
+            await fetchRows(client, []);
+            expect(metadataCalls()).toHaveLength(0);
+
+            for (let seq = 1; seq <= 9; seq += 1) {
+                deliver(seq, agentText(seq));
+                await vi.advanceTimersByTimeAsync(3000);
+            }
+            deliver(10, turnEnd(10));
+            await vi.advanceTimersByTimeAsync(0);
+            expect(metadataWrites().map((m: any) => m.listSummary)).toEqual([summaryOf(10, { assistantSeq: 9 })]);
+
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(metadataCalls()).toHaveLength(1);
+        });
+
+        it('writes rows without a boundary at most once in 15 s', async () => {
+            vi.useFakeTimers();
+            acceptMetadataWrites();
+            session.metadata = { ...session.metadata, listSummary: summaryOf(0) } as any;
+            const client = new ApiSessionClient('fake-token', session);
+            await fetchRows(client, []);
+
+            for (let seq = 1; seq <= 10; seq += 1) {
+                deliver(seq, agentText(seq));
+                await vi.advanceTimersByTimeAsync(3000);
+            }
+            expect(metadataCalls()).toHaveLength(0);
+            await vi.advanceTimersByTimeAsync(12_000);
+            expect(metadataWrites().map((m: any) => m.listSummary.to)).toEqual([10]);
+
+            deliver(11, agentText(11));
+            await vi.advanceTimersByTimeAsync(14_999);
+            expect(metadataCalls()).toHaveLength(1);
+            await vi.advanceTimersByTimeAsync(1);
+            expect(metadataWrites().map((m: any) => m.listSummary.to)).toEqual([10, 11]);
+        });
+
+        it('sends the meaningful time and the summary in one write', async () => {
+            vi.useFakeTimers();
+            acceptMetadataWrites();
+            mockAxiosPost.mockResolvedValue({ data: { messages: [] } });
+            session.metadata = { ...session.metadata, listSummary: summaryOf(0) } as any;
+            const client = new ApiSessionClient('fake-token', session);
+            await fetchRows(client, []);
+
+            deliver(1, agentText(1));
+            client.sendSessionProtocolMessage({ id: 'e2', time: 5000, role: 'agent', ev: { t: 'text', text: 'done' } });
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(metadataWrites()).toHaveLength(1);
+            expect(metadataWrites()[0]).toMatchObject({ lastMeaningfulMessageAt: 5000, listSummary: summaryOf(1, { assistantSeq: 1 }) });
+            // A write with the meaningful time keeps the unbounded mode.
+            expect(mockSocket.timeout).not.toHaveBeenCalled();
+        });
+
+        it('does not emit when a handler returns the same object', async () => {
+            acceptMetadataWrites();
+            mockAxiosPost.mockResolvedValue({ data: { messages: [] } });
+            session.metadata = { ...session.metadata, lastMeaningfulMessageAt: 9000 } as any;
+            const client = new ApiSessionClient('fake-token', session);
+
+            await expect(client.updateMetadata((metadata) => metadata)).resolves.toBe(true);
+            await expect(client.updateMetadata((metadata) => metadata, { ackTimeoutMs: 10, attempts: 3 })).resolves.toBe(true);
+            client.sendSessionProtocolMessage({ id: 'e1', time: 5000, role: 'agent', ev: { t: 'text', text: 'older' } });
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            expect(metadataCalls()).toHaveLength(0);
+        });
+
+        it('does not write a summary that equals the server copy', async () => {
+            acceptMetadataWrites();
+            session.metadata = { ...session.metadata, listSummary: summaryOf(3, { assistantSeq: 2, userSeq: 1 }) } as any;
+            const client = new ApiSessionClient('fake-token', session);
+            client.onUserMessage(vi.fn());
+
+            await fetchRows(client, [fetchedRow(1, userText('go')), fetchedRow(2, agentText(2)), fetchedRow(3, turnEnd(3))]);
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Only the meaningful time of the user message goes out.
+            expect(metadataWrites().map((m: any) => m.listSummary)).toEqual([summaryOf(3, { assistantSeq: 2, userSeq: 1 })]);
+            expect(metadataWrites()).toHaveLength(1);
+            expect(mockSocket.timeout).not.toHaveBeenCalled();
+        });
+
+        it('writes current data onto the newest server metadata after a version mismatch', async () => {
+            let calls = 0;
+            mockSocket.emitWithAck.mockImplementation(async (event: string, payload: any) => {
+                if (event !== 'update-metadata') return { result: 'error' };
+                calls += 1;
+                if (calls === 1) {
+                    return { result: 'version-mismatch', version: 5, metadata: encryptContent(session, { ...session.metadata, name: 'renamed' }) };
+                }
+                return { result: 'success', version: 6, metadata: payload.metadata };
+            });
+            const client = new ApiSessionClient('fake-token', session);
+
+            await fetchRows(client, [fetchedRow(1, agentText(1)), fetchedRow(2, turnEnd(2))]);
+            await waitForCheck(() => expect(metadataCalls()).toHaveLength(2));
+
+            const [, retry] = metadataCalls()[1];
+            expect(retry.expectedVersion).toBe(5);
+            expect(metadataWrites()[1]).toMatchObject({ name: 'renamed', listSummary: summaryOf(2, { assistantSeq: 1 }) });
+            expect(mockSocket.timeout).toHaveBeenCalledWith(10_000);
+            await waitForCheck(() => expect(client.getMetadata()?.listSummary).toEqual(summaryOf(2, { assistantSeq: 1 })));
+        });
+
+        it('gives up a summary write after 3 attempts without an ack and runs the next lifecycle write', async () => {
+            vi.useFakeTimers();
+            acceptMetadataWrites();
+            const hung = hangBoundedWrites();
+            const client = new ApiSessionClient('fake-token', session);
+            await fetchRows(client, [fetchedRow(1, turnEnd(1))]);
+            await vi.advanceTimersByTimeAsync(0);
+            const lifecycle = client.updateMetadata((metadata) => ({ ...metadata, lifecycleState: 'archived' }));
+
+            await vi.advanceTimersByTimeAsync(29_999);
+            expect(hung).toHaveBeenCalledTimes(3);
+            expect(metadataCalls()).toHaveLength(0);
+            await vi.advanceTimersByTimeAsync(10);
+
+            await expect(lifecycle).resolves.toBe(true);
+            expect(metadataWrites()).toEqual([expect.objectContaining({ lifecycleState: 'archived' })]);
+            expect(hung).toHaveBeenCalledTimes(3);
+        });
+
+        it('does not queue a second lock entry for a boundary during a write in flight', async () => {
+            vi.useFakeTimers();
+            acceptMetadataWrites();
+            const hung = hangBoundedWrites();
+            session.metadata = { ...session.metadata, listSummary: summaryOf(0) } as any;
+            const client = new ApiSessionClient('fake-token', session);
+            await fetchRows(client, []);
+
+            deliver(1, turnEnd(1));
+            await vi.advanceTimersByTimeAsync(0);
+            deliver(2, agentText(2, 'Pick.\n\n<options><option>A</option></options>'));
+            deliver(3, turnEnd(3));
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(hung).toHaveBeenCalledTimes(1);
+            expect((client as any).metadataLock.promiseResolverQueue).toHaveLength(0);
+
+            // The first write gives up after 30 s. The rows that came during it go out 15 s later.
+            await vi.advanceTimersByTimeAsync(30_000);
+            expect(hung).toHaveBeenCalledTimes(3);
+            await vi.advanceTimersByTimeAsync(15_000);
+            expect(hung).toHaveBeenCalledTimes(4);
+            const payload = hung.mock.calls[3][1] as { metadata: string };
+            expect(decrypt(session.encryptionKey, session.encryptionVariant, decodeBase64(payload.metadata)).listSummary)
+                .toEqual(summaryOf(3, { assistantSeq: 2, optionsSeq: 2 }));
+        });
+
+        it('marks the summary as not complete when the socket path cannot decrypt a row', async () => {
+            acceptMetadataWrites();
+            session.metadata = { ...session.metadata, listSummary: summaryOf(0) } as any;
+            const client = new ApiSessionClient('fake-token', session);
+            await fetchRows(client, []);
+
+            emitSocketEvent('update', createNewMessageUpdate(1, encodeBase64(new Uint8Array(64))));
+            deliver(2, turnEnd(2));
+
+            await waitForCheck(() => expect(metadataWrites().at(-1)?.listSummary).toEqual(summaryOf(2, { complete: false })));
+        });
+
+        it('marks the summary as not complete when the fetch path cannot decrypt a row', async () => {
+            acceptMetadataWrites();
+            const client = new ApiSessionClient('fake-token', session);
+
+            await fetchRows(client, [
+                { ...fetchedRow(1, {}), content: { t: 'encrypted', c: encodeBase64(new Uint8Array(64)) } },
+                fetchedRow(2, turnEnd(2)),
+            ]);
+
+            await waitForCheck(() => expect(metadataWrites().at(-1)?.listSummary).toEqual(summaryOf(2, { complete: false })));
+        });
+
+        it('marks the summary as not complete after a row that is not encrypted', async () => {
+            acceptMetadataWrites();
+            const client = new ApiSessionClient('fake-token', session);
+
+            await fetchRows(client, [
+                { id: 'msg-1', seq: 1, localId: null, createdAt: 1, updatedAt: 1, content: { t: 'plain' } },
+                fetchedRow(2, turnEnd(2)),
+            ]);
+
+            await waitForCheck(() => expect(metadataWrites().at(-1)?.listSummary).toEqual(summaryOf(2, { complete: false })));
+        });
+
+        it('keeps the counters when a listener throws and the next fetch reads the same seq again', async () => {
+            acceptMetadataWrites();
+            session.metadata = { ...session.metadata, listSummary: summaryOf(0) } as any;
+            const client = new ApiSessionClient('fake-token', session);
+            await fetchRows(client, []);
+            const options = agentText(1, 'Pick.\n\n<options><option>A</option></options>');
+            client.on('message', () => {
+                throw new Error('listener failed');
+            });
+
+            deliver(1, options);
+            await waitForCheck(() => expect(metadataCalls()).toHaveLength(1));
+            expect((client as any).lastReceivedSeq).toBe(0);
+            await fetchRows(client, [fetchedRow(1, options), fetchedRow(2, turnEnd(2))]);
+
+            await waitForCheck(() => expect(metadataWrites().map((m: any) => m.listSummary)).toEqual([
+                summaryOf(0, { assistantSeq: 1, optionsSeq: 1 }),
+                summaryOf(2, { assistantSeq: 1, optionsSeq: 1 }),
+            ]));
+        });
+
+        it('observes the rows of a reconnect without routing them', async () => {
+            acceptMetadataWrites();
+            const client = new ApiSessionClient('fake-token', session);
+            const onUserMessage = vi.fn();
+            client.onUserMessage(onUserMessage);
+            const route = vi.spyOn(client as any, 'routeIncomingMessage');
+            client.skipExistingMessages();
+
+            await fetchRows(client, [fetchedRow(1, userText('go')), fetchedRow(2, agentText(2)), fetchedRow(3, turnEnd(3))]);
+
+            await waitForCheck(() => expect(metadataWrites().map((m: any) => m.listSummary)).toEqual([
+                summaryOf(3, { assistantSeq: 2, userSeq: 1 }),
+            ]));
+            expect(route).not.toHaveBeenCalled();
+            expect(onUserMessage).not.toHaveBeenCalled();
+        });
+
+        it('writes nothing after a daemon restart when each idle session has an equal summary', async () => {
+            acceptMetadataWrites();
+            const rows = () => [fetchedRow(1, userText('go')), fetchedRow(2, agentText(2)), fetchedRow(3, turnEnd(3))];
+            session.metadata = { ...session.metadata, listSummary: summaryOf(3, { assistantSeq: 2, userSeq: 1 }) } as any;
+
+            for (let i = 0; i < 3; i += 1) {
+                const client = new ApiSessionClient('fake-token', session);
+                client.skipExistingMessages();
+                await fetchRows(client, rows());
+            }
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            expect(metadataCalls()).toHaveLength(0);
+        });
+
+        it('writes once per session after a daemon restart when the lifecycle write dropped the summary', async () => {
+            acceptMetadataWrites();
+            const rows = () => [fetchedRow(1, userText('go')), fetchedRow(2, agentText(2)), fetchedRow(3, turnEnd(3))];
+
+            for (let i = 0; i < 3; i += 1) {
+                const client = new ApiSessionClient('fake-token', session);
+                client.skipExistingMessages();
+                await fetchRows(client, rows());
+            }
+            await waitForCheck(() => expect(metadataCalls()).toHaveLength(3));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            expect(metadataCalls()).toHaveLength(3);
+            expect(metadataWrites().every((m: any) => m.listSummary.to === 3)).toBe(true);
+        });
+
+        it('waits at most 3 s for the final write on close', async () => {
+            vi.useFakeTimers();
+            acceptMetadataWrites();
+            const hung = hangBoundedWrites();
+            mockDelay.mockImplementationOnce(((ms: number) => new Promise((resolve) => setTimeout(resolve, ms))) as any);
+            session.metadata = { ...session.metadata, listSummary: summaryOf(0) } as any;
+            const client = new ApiSessionClient('fake-token', session);
+            await fetchRows(client, []);
+            deliver(1, agentText(1));
+
+            let closed = false;
+            void client.close().then(() => {
+                closed = true;
+            });
+            await vi.advanceTimersByTimeAsync(2_999);
+            expect(hung).toHaveBeenCalledTimes(1);
+            expect(closed).toBe(false);
+            expect(mockSocket.close).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(1);
+
+            expect(closed).toBe(true);
+            expect(mockDelay).toHaveBeenCalledWith(3000);
+            expect(mockSocket.close).toHaveBeenCalled();
+        });
+
+        it('writes nothing with HAPPY_RAYNO_LIST_SUMMARY=0', async () => {
+            vi.stubEnv('HAPPY_RAYNO_LIST_SUMMARY', '0');
+            acceptMetadataWrites();
+            const client = new ApiSessionClient('fake-token', session);
+
+            await fetchRows(client, [fetchedRow(1, agentText(1)), fetchedRow(2, turnEnd(2))]);
+            deliver(3, turnEnd(3));
+            await client.close();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            expect(metadataCalls()).toHaveLength(0);
         });
     });
 
